@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94a3b8;
+}
+
+.dark {
+  --color-primary: #3b82f6;
+  --color-primary-hover: #60a5fa;
+  --color-bg: #0f172a;
+  --color-surface: #1e293b;
+  --color-surface-hover: #334155;
+  --color-border: #334155;
+  --color-text: #f1f5f9;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #64748b;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  transition: background-color 0.3s, color 0.3s;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* MapLibre popup overrides */
+.maplibregl-popup-content {
+  border-radius: 12px !important;
+  padding: 0 !important;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15) !important;
+  overflow: hidden;
+  border: 1px solid rgba(0,0,0,0.06) !important;
+}
+
+.dark .maplibregl-popup-content {
+  background: #1e293b !important;
+  color: #f1f5f9 !important;
+  border-color: rgba(255,255,255,0.08) !important;
+}
+
+.maplibregl-popup-close-button {
+  font-size: 18px;
+  padding: 4px 8px;
+  color: #64748b;
+  z-index: 10;
+}
+
+.dark .maplibregl-popup-close-button {
+  color: #94a3b8;
+}
+
+.maplibregl-ctrl-attrib {
+  font-size: 10px !important;
+}
+
+/* Ensure MapLibre controls don't get broken */
+.maplibregl-ctrl-group button {
+  box-sizing: content-box;
+}
+
+/* Marker pulse animation */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* Popup styling */
+.icu-popup .maplibregl-popup-content {
+  border-radius: 16px !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.08) !important;
+}
+
+.dark .icu-popup .maplibregl-popup-content {
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3) !important;
+}
+
+/* Toast slide-in animation */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
