@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { getDB } from '../db.js'
+import { getModels } from '../db.js'
 import { authenticate, requireRole, requireActive } from '../middleware/auth.js'
 
 const router = Router()
@@ -7,17 +7,24 @@ const router = Router()
 router.use(authenticate, requireActive, requireRole('admin'))
 
 function sanitizeUser(row) {
-  const user = { ...row }
+  const user = row?.toJSON ? row.toJSON() : { ...row }
+  if (user._id) {
+    user.id = user._id.toString()
+    delete user._id
+  }
+  if (user.assigned_hospitals) {
+    user.assigned_hospitals = user.assigned_hospitals.map(id => id.toString())
+  }
   delete user.password
-  user.assigned_hospitals = JSON.parse(user.assigned_hospitals || '[]')
   return user
 }
 
 // GET /api/users
 router.get('/', async (req, res) => {
   try {
-    const [rows] = await getDB().execute('SELECT * FROM users ORDER BY createdAt DESC')
-    res.json(rows.map(sanitizeUser))
+    const { User } = getModels()
+    const users = await User.find().sort({ createdAt: -1 })
+    res.json(users.map(sanitizeUser))
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -26,14 +33,13 @@ router.get('/', async (req, res) => {
 // PUT /api/users/:id/approve
 router.put('/:id/approve', async (req, res) => {
   try {
-    const db = getDB()
-    await db.execute("UPDATE users SET status = 'active' WHERE id = ?", [req.params.id])
-    const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [req.params.id])
-    if (!rows.length) return res.status(404).json({ error: 'User not found' })
+    const { User } = getModels()
+    const user = await User.findByIdAndUpdate(req.params.id, { status: 'active' }, { new: true })
+    if (!user) return res.status(404).json({ error: 'User not found' })
 
-    const user = sanitizeUser(rows[0])
-    req.app.get('io')?.emit('user:update', user)
-    res.json(user)
+    const clean = sanitizeUser(user)
+    req.app.get('io')?.emit('user:update', clean)
+    res.json(clean)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -42,26 +48,19 @@ router.put('/:id/approve', async (req, res) => {
 // PUT /api/users/:id
 router.put('/:id', async (req, res) => {
   try {
-    const db = getDB()
     const { role, assigned_hospitals, status } = req.body
-    const sets = []
-    const vals = []
+    const { User } = getModels()
+    const updates = {}
+    if (role) updates.role = role
+    if (assigned_hospitals) updates.assigned_hospitals = assigned_hospitals
+    if (status) updates.status = status
 
-    if (role) { sets.push('role = ?'); vals.push(role) }
-    if (assigned_hospitals) { sets.push('assigned_hospitals = ?'); vals.push(JSON.stringify(assigned_hospitals)) }
-    if (status) { sets.push('status = ?'); vals.push(status) }
+    const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true })
+    if (!user) return res.status(404).json({ error: 'User not found' })
 
-    if (sets.length) {
-      vals.push(req.params.id)
-      await db.execute(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, vals)
-    }
-
-    const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [req.params.id])
-    if (!rows.length) return res.status(404).json({ error: 'User not found' })
-
-    const user = sanitizeUser(rows[0])
-    req.app.get('io')?.emit('user:update', user)
-    res.json(user)
+    const clean = sanitizeUser(user)
+    req.app.get('io')?.emit('user:update', clean)
+    res.json(clean)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -70,10 +69,11 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/users/:id
 router.delete('/:id', async (req, res) => {
   try {
-    const [result] = await getDB().execute('DELETE FROM users WHERE id = ?', [req.params.id])
-    if (!result.affectedRows) return res.status(404).json({ error: 'User not found' })
+    const { User } = getModels()
+    const deleted = await User.findByIdAndDelete(req.params.id)
+    if (!deleted) return res.status(404).json({ error: 'User not found' })
 
-    req.app.get('io')?.emit('user:delete', parseInt(req.params.id))
+    req.app.get('io')?.emit('user:delete', req.params.id)
     res.json({ message: 'User deleted' })
   } catch (err) {
     res.status(500).json({ error: err.message })

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds\" && npm create vite@latest . -- --template react 2>&1)",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds\" && npm create vite@latest icu-beds-app -- --template react 2>&1)",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds\" && npm install react-router-dom firebase maplibre-gl @tailwindcss/vite tailwindcss 2>&1)",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds\" && npm run dev 2>&1)",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds\" && npx vite build 2>&1 | tail -20)",
+      "Bash(open http://localhost:5173/)",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds\" && npx vite build 2>&1 | tail -15)",
+      "Bash(lsof -ti:5173 | xargs kill -9 2>/dev/null; cd \"/Users/rahadulislam/Documents/ICU Beds\" && npm run dev 2>&1)",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds\" && npx vite build 2>&1)",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds\" && npm install 2>&1 | tail -5)",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds/server\" && npm install 2>&1 | tail -5)",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds/server\" && npm install)",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds/server\" && timeout 8 node index.js 2>&1 || true)",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds/server\" && node -e \"\nimport\\('./db.js'\\).then\\(\\({ initDB }\\) => {\n  initDB\\(\\).then\\(\\(\\) => {\n    console.log\\('SUCCESS: MySQL connected and tables created'\\)\n    process.exit\\(0\\)\n  }\\).catch\\(err => {\n    console.error\\('FAIL:', err.message\\)\n    process.exit\\(1\\)\n  }\\)\n}\\)\n\")",
+      "Bash(cd \"/Users/rahadulislam/Documents/ICU Beds/server\" && node -e \"\nimport\\('./db.js'\\).then\\(\\({ initDB }\\) => {\n  initDB\\(\\).then\\(\\(\\) => {\n    console.log\\('SUCCESS'\\)\n    process.exit\\(0\\)\n  }\\).catch\\(err => {\n    console.error\\('FAIL:', err.code, err.message, err.errno\\)\n    process.exit\\(1\\)\n  }\\)\n}\\)\n\" 2>&1)"
+    ]
+  }
+}

@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken'
-import { getDB } from '../db.js'
+import { getModels } from '../db.js'
 
 export async function authenticate(req, res, next) {
   const header = req.headers.authorization
@@ -9,13 +9,11 @@ export async function authenticate(req, res, next) {
 
   try {
     const decoded = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET)
-    const [rows] = await getDB().execute('SELECT * FROM users WHERE id = ?', [decoded.id])
-    if (!rows.length) return res.status(401).json({ error: 'User not found' })
+    const { User } = getModels()
+    const user = await User.findById(decoded.id)
+    if (!user) return res.status(401).json({ error: 'User not found' })
 
-    const user = rows[0]
-    user.assigned_hospitals = JSON.parse(user.assigned_hospitals || '[]')
-    delete user.password
-    req.user = user
+    req.user = user.toJSON()
     next()
   } catch {
     res.status(401).json({ error: 'Invalid token' })

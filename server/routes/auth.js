@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
-import { getDB } from '../db.js'
+import { getModels } from '../db.js'
 import { authenticate } from '../middleware/auth.js'
 
 const router = Router()
@@ -10,10 +10,17 @@ function signToken(id) {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' })
 }
 
-function sanitizeUser(row) {
-  const user = { ...row }
+function sanitizeUser(userDoc) {
+  const user = userDoc?.toJSON ? userDoc.toJSON() : { ...userDoc }
+  if (user._id) {
+    user.id = user._id.toString()
+    delete user._id
+  }
+  if (user.assigned_hospitals) {
+    user.assigned_hospitals = user.assigned_hospitals.map(id => id.toString())
+  }
   delete user.password
-  user.assigned_hospitals = JSON.parse(user.assigned_hospitals || '[]')
+  user.role = user.role || 'rep'
   return user
 }
 
@@ -21,35 +28,42 @@ function sanitizeUser(row) {
 router.post('/signup', async (req, res) => {
   try {
     const { email, password, role, displayName } = req.body
-    const db = getDB()
+    const { User } = getModels()
 
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' })
     if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' })
 
-    const [existing] = await db.execute('SELECT id FROM users WHERE email = ?', [email])
-    if (existing.length) return res.status(409).json({ error: 'An account with this email already exists' })
+    const allowedRoles = ['rep', 'moderator', 'admin']
+    const requestedRole = (role || '').toLowerCase().trim()
+    const finalRole = allowedRoles.includes(requestedRole) ? requestedRole : 'rep'
 
-    if (role === 'admin') {
-      const [admins] = await db.execute("SELECT COUNT(*) as cnt FROM users WHERE role = 'admin'")
-      if (admins[0].cnt >= 2) return res.status(400).json({ error: 'Maximum of 2 admin accounts allowed' })
+    const existing = await User.findOne({ email })
+    if (existing) return res.status(409).json({ error: 'An account with this email already exists' })
+
+    if (finalRole === 'admin') {
+      const admins = await User.countDocuments({ role: 'admin' })
+      if (admins >= 2) return res.status(400).json({ error: 'Maximum of 2 admin accounts allowed' })
     }
 
     // Auto-approval logic
-    const [adminRows] = await db.execute("SELECT COUNT(*) as cnt FROM users WHERE role = 'admin'")
-    const [totalRows] = await db.execute('SELECT COUNT(*) as cnt FROM users')
-    const isFirstAdmin = role === 'admin' && adminRows[0].cnt === 0
-    const autoApprove = isFirstAdmin || totalRows[0].cnt === 0
+    const adminCount = await User.countDocuments({ role: 'admin' })
+    const totalCount = await User.countDocuments()
+    const isFirstAdmin = finalRole === 'admin' && adminCount === 0
+    const autoApprove = isFirstAdmin || totalCount === 0
 
     const hashed = await bcrypt.hash(password, 12)
-    const [result] = await db.execute(
-      'INSERT INTO users (email, password, displayName, role, status) VALUES (?, ?, ?, ?, ?)',
-      [email, hashed, displayName || email.split('@')[0], role || 'rep', autoApprove ? 'active' : 'pending']
-    )
+    const user = await User.create({
+      email,
+      password: hashed,
+      displayName: displayName || email.split('@')[0],
+      role: finalRole,
+      status: autoApprove ? 'active' : 'pending',
+      assigned_hospitals: [],
+    })
 
-    const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [result.insertId])
-    const user = sanitizeUser(rows[0])
-    const token = signToken(user.id)
-    res.status(201).json({ token, user })
+    const clean = sanitizeUser(user)
+    const token = signToken(clean.id)
+    res.status(201).json({ token, user: clean })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -59,12 +73,11 @@ router.post('/signup', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body
-    const db = getDB()
+    const { User } = getModels()
 
-    const [rows] = await db.execute('SELECT * FROM users WHERE email = ?', [email])
-    if (!rows.length) return res.status(401).json({ error: 'Invalid email or password' })
+    const user = await User.findOne({ email }).lean()
+    if (!user) return res.status(401).json({ error: 'Invalid email or password' })
 
-    const user = rows[0]
     const valid = await bcrypt.compare(password, user.password)
     if (!valid) return res.status(401).json({ error: 'Invalid email or password' })
 
@@ -72,8 +85,9 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ error: 'Your account is pending admin approval. Please wait.' })
     }
 
-    const token = signToken(user.id)
-    res.json({ token, user: sanitizeUser(user) })
+    const clean = sanitizeUser(user)
+    const token = signToken(clean.id)
+    res.json({ token, user: clean })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -88,21 +102,15 @@ router.get('/me', authenticate, (req, res) => {
 router.put('/profile', authenticate, async (req, res) => {
   try {
     const { displayName, phone, organization } = req.body
-    const db = getDB()
-    const sets = []
-    const vals = []
+    const { User } = getModels()
 
-    if (displayName !== undefined) { sets.push('displayName = ?'); vals.push(displayName) }
-    if (phone !== undefined) { sets.push('phone = ?'); vals.push(phone) }
-    if (organization !== undefined) { sets.push('organization = ?'); vals.push(organization) }
+    const updates = {}
+    if (displayName !== undefined) updates.displayName = displayName
+    if (phone !== undefined) updates.phone = phone
+    if (organization !== undefined) updates.organization = organization
 
-    if (sets.length) {
-      vals.push(req.user.id)
-      await db.execute(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, vals)
-    }
-
-    const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [req.user.id])
-    res.json({ user: sanitizeUser(rows[0]) })
+    const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true })
+    res.json({ user: sanitizeUser(user) })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -112,15 +120,15 @@ router.put('/profile', authenticate, async (req, res) => {
 router.put('/password', authenticate, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body
-    const db = getDB()
+    const { User } = getModels()
 
-    const [rows] = await db.execute('SELECT password FROM users WHERE id = ?', [req.user.id])
-    const valid = await bcrypt.compare(currentPassword, rows[0].password)
+    const user = await User.findById(req.user.id).select('password')
+    const valid = user && await bcrypt.compare(currentPassword, user.password)
     if (!valid) return res.status(401).json({ error: 'Current password is incorrect' })
     if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' })
 
     const hashed = await bcrypt.hash(newPassword, 12)
-    await db.execute('UPDATE users SET password = ? WHERE id = ?', [hashed, req.user.id])
+    await User.findByIdAndUpdate(req.user.id, { password: hashed })
     res.json({ message: 'Password changed successfully' })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -131,13 +139,13 @@ router.put('/password', authenticate, async (req, res) => {
 router.delete('/account', authenticate, async (req, res) => {
   try {
     const { password } = req.body
-    const db = getDB()
+    const { User } = getModels()
 
-    const [rows] = await db.execute('SELECT password FROM users WHERE id = ?', [req.user.id])
-    const valid = await bcrypt.compare(password, rows[0].password)
+    const user = await User.findById(req.user.id).select('password')
+    const valid = user && await bcrypt.compare(password, user.password)
     if (!valid) return res.status(401).json({ error: 'Incorrect password' })
 
-    await db.execute('DELETE FROM users WHERE id = ?', [req.user.id])
+    await User.findByIdAndDelete(req.user.id)
     res.json({ message: 'Account deleted' })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -146,8 +154,9 @@ router.delete('/account', authenticate, async (req, res) => {
 
 // GET /api/auth/admin-count
 router.get('/admin-count', async (req, res) => {
-  const [rows] = await getDB().execute("SELECT COUNT(*) as count FROM users WHERE role = 'admin'")
-  res.json({ count: rows[0].count })
+  const { User } = getModels()
+  const count = await User.countDocuments({ role: 'admin' })
+  res.json({ count })
 })
 
 export default router

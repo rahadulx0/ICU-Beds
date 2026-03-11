@@ -28,9 +28,41 @@ function formatTimestamp(ts) {
   return new Date(ts).toLocaleString()
 }
 
+function applyVibrantPalette(map) {
+  const setPaint = (layer, prop, value) => {
+    if (map.getLayer(layer)) {
+      try { map.setPaintProperty(layer, prop, value) } catch { /* ignore missing props */ }
+    }
+  }
+
+  // These layer ids exist in Carto Voyager/Dark Matter; wrapped in try to stay safe.
+  setPaint('water', 'fill-color', VIBRANT_PALETTE.water)
+  setPaint('landcover', 'fill-color', VIBRANT_PALETTE.land)
+  setPaint('land', 'background-color', VIBRANT_PALETTE.land)
+  setPaint('park', 'fill-color', VIBRANT_PALETTE.park)
+  setPaint('road', 'line-color', VIBRANT_PALETTE.roadOther)
+  setPaint('road_primary', 'line-color', VIBRANT_PALETTE.roadPrimary)
+  setPaint('road_secondary', 'line-color', VIBRANT_PALETTE.roadSecondary)
+  setPaint('bridge', 'line-color', VIBRANT_PALETTE.roadSecondary)
+}
+
 const MAP_STYLES = {
   light: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
   dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
+}
+
+const BD_BOUNDS = [
+  [87.5, 20.0], // southwest
+  [93.7, 27.5]  // northeast
+]
+
+const VIBRANT_PALETTE = {
+  water: '#8ec5ff',
+  land: '#fef6e4',
+  park: '#d8f3a1',
+  roadPrimary: '#ff6b6b',
+  roadSecondary: '#ffa94d',
+  roadOther: '#ffd166',
 }
 
 export default function Map() {
@@ -50,13 +82,23 @@ export default function Map() {
     const map = new maplibregl.Map({
       container: mapContainer.current,
       style: dark ? MAP_STYLES.dark : MAP_STYLES.light,
-      center: [90.4125, 23.8103],
-      zoom: 7,
+      center: [90.3563, 23.685],
+      zoom: 6.7,
+      maxBounds: BD_BOUNDS,
+      maxZoom: 16,
+      minZoom: 5,
       attributionControl: false
     })
 
     map.addControl(new maplibregl.NavigationControl(), 'bottom-right')
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left')
+
+    map.once('load', () => {
+      map.fitBounds(BD_BOUNDS, { padding: 48 })
+      applyVibrantPalette(map)
+    })
+
+    map.on('styledata', () => applyVibrantPalette(map))
 
     mapRef.current = map
 
@@ -134,14 +176,20 @@ export default function Map() {
       const bedsAvail = h.available_beds ?? 0
 
       const el = document.createElement('div')
-      el.style.cssText = 'width:44px;height:44px;cursor:pointer;position:relative;'
+      el.style.cssText = 'width:46px;height:46px;cursor:pointer;position:relative;filter:drop-shadow(0 10px 18px rgba(0,0,0,0.16));'
       el.innerHTML = `
-        <div style="position:absolute;inset:0;border-radius:50%;background:${glow};animation:pulse-ring 2s ease-out infinite;"></div>
-        <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" style="position:relative;filter:drop-shadow(0 2px 6px ${glow});">
-          <circle cx="22" cy="22" r="17" fill="${color}" opacity="0.18"/>
-          <circle cx="22" cy="22" r="11" fill="${color}" opacity="0.4"/>
-          <circle cx="22" cy="22" r="7" fill="${color}" stroke="white" stroke-width="2.5"/>
-          <text x="22" y="25" text-anchor="middle" font-size="8" font-weight="800" fill="white">${bedsAvail}</text>
+        <div style="position:absolute;inset:4px;border-radius:16px;background:${glow};animation:pulse-ring 1.8s ease-out infinite;"></div>
+        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" style="position:relative;">
+          <defs>
+            <linearGradient id="grad-${h.id}" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="${color}" stop-opacity="0.95"/>
+              <stop offset="100%" stop-color="${color}CC"/>
+            </linearGradient>
+          </defs>
+          <circle cx="24" cy="24" r="18" fill="url(#grad-${h.id})" opacity="0.9"/>
+          <circle cx="24" cy="24" r="11" fill="white" opacity="0.12"/>
+          <circle cx="24" cy="24" r="9" fill="#0f172a" opacity="0.12"/>
+          <text x="24" y="27" text-anchor="middle" font-size="9" font-weight="800" fill="white">${bedsAvail}</text>
         </svg>
       `
 
@@ -198,11 +246,12 @@ export default function Map() {
 
   return (
     <div className="relative w-full h-full">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-blue-50/70 via-transparent to-emerald-50/50 dark:from-slate-900/60 dark:via-transparent dark:to-slate-900/40 z-[1]" />
       <div ref={mapContainer} className="w-full h-full" />
 
       {/* Search & Filter Panel */}
       <div className="absolute top-[76px] left-3 right-3 sm:left-4 sm:right-auto sm:w-[360px] lg:w-[380px] z-10">
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg shadow-black/[0.08] dark:shadow-black/30 border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div className="bg-white/95 backdrop-blur-md dark:bg-slate-800/90 rounded-xl shadow-lg shadow-black/[0.08] dark:shadow-black/30 border border-slate-200 dark:border-slate-700 overflow-hidden">
 
           {/* Search input */}
           <div className="p-3 pb-2">
@@ -268,7 +317,7 @@ export default function Map() {
 
       {/* Legend */}
       <div className="absolute bottom-6 left-3 sm:left-4 z-10">
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg shadow-black/[0.08] dark:shadow-black/30 border border-slate-200 dark:border-slate-700 px-3.5 py-2.5">
+        <div className="bg-white/95 backdrop-blur-md dark:bg-slate-800/90 rounded-lg shadow-lg shadow-black/[0.08] dark:shadow-black/30 border border-slate-200 dark:border-slate-700 px-3.5 py-2.5">
           <div className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Legend</div>
           <div className="flex gap-3.5 text-xs">
             <div className="flex items-center gap-1.5">
