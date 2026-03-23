@@ -1,37 +1,29 @@
-import jwt from 'jsonwebtoken'
-import { getModels } from '../db.js'
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
-export async function authenticate(req, res, next) {
-  const header = req.headers.authorization
-  if (!header?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No token provided' })
-  }
-
+const auth = async (req, res, next) => {
   try {
-    const decoded = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET)
-    const { User } = getModels()
-    const user = await User.findById(decoded.id)
-    if (!user) return res.status(401).json({ error: 'User not found' })
+    const token = req.cookies?.token;
 
-    req.user = user.toJSON()
-    next()
-  } catch {
-    res.status(401).json({ error: 'Invalid token' })
-  }
-}
-
-export function requireRole(...roles) {
-  return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' })
+    if (!token) {
+      return res.status(401).json({ message: 'Authentication required' });
     }
-    next()
-  }
-}
 
-export function requireActive(req, res, next) {
-  if (req.user.status !== 'active') {
-    return res.status(403).json({ error: 'Account pending approval' })
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+
+    if (!user || !user.is_active) {
+      return res.status(401).json({ message: 'User not found or deactivated' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Token expired' });
+    }
+    return res.status(401).json({ message: 'Invalid token' });
   }
-  next()
-}
+};
+
+module.exports = auth;

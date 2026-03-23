@@ -1,340 +1,368 @@
-import { useEffect, useRef, useState } from 'react'
-import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
-import api from '../api'
-import socket from '../socket'
-import { useTheme } from '../contexts/ThemeContext'
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from 'react-leaflet';
+import L from 'leaflet';
+import { Phone, Bed, MapPin, Navigation, Plus } from 'lucide-react';
 
-function getMarkerColor(available) {
-  if (available > 5) return '#10b981'
-  if (available >= 1) return '#f59e0b'
-  return '#ef4444'
-}
+// Fix default leaflet icon issue
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
 
-function getMarkerGlow(available) {
-  if (available > 5) return 'rgba(16,185,129,0.35)'
-  if (available >= 1) return 'rgba(245,158,11,0.35)'
-  return 'rgba(239,68,68,0.35)'
-}
+const createHospitalIcon = (available, total) => {
+  const ratio = total > 0 ? available / total : 0;
+  let color, bg;
 
-function getStatusText(available) {
-  if (available > 5) return 'Available'
-  if (available >= 1) return 'Limited'
-  return 'Full'
-}
-
-function formatTimestamp(ts) {
-  if (!ts) return 'Unknown'
-  return new Date(ts).toLocaleString()
-}
-
-function applyVibrantPalette(map) {
-  const setPaint = (layer, prop, value) => {
-    if (map.getLayer(layer)) {
-      try { map.setPaintProperty(layer, prop, value) } catch { /* ignore missing props */ }
-    }
+  if (available === 0) {
+    color = '#dc2626';
+    bg = '#fef2f2';
+  } else if (ratio <= 0.2) {
+    color = '#f59e0b';
+    bg = '#fffbeb';
+  } else {
+    color = '#059669';
+    bg = '#ecfdf5';
   }
 
-  // These layer ids exist in Carto Voyager/Dark Matter; wrapped in try to stay safe.
-  setPaint('water', 'fill-color', VIBRANT_PALETTE.water)
-  setPaint('landcover', 'fill-color', VIBRANT_PALETTE.land)
-  setPaint('land', 'background-color', VIBRANT_PALETTE.land)
-  setPaint('park', 'fill-color', VIBRANT_PALETTE.park)
-  setPaint('road', 'line-color', VIBRANT_PALETTE.roadOther)
-  setPaint('road_primary', 'line-color', VIBRANT_PALETTE.roadPrimary)
-  setPaint('road_secondary', 'line-color', VIBRANT_PALETTE.roadSecondary)
-  setPaint('bridge', 'line-color', VIBRANT_PALETTE.roadSecondary)
-}
+  return L.divIcon({
+    className: 'custom-marker',
+    html: `
+      <div style="
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: ${bg};
+        border: 3px solid ${color};
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        font-weight: 700;
+        font-size: 13px;
+        color: ${color};
+        font-family: Inter, system-ui, sans-serif;
+      ">${available}</div>
+    `,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -24],
+  });
+};
 
-const MAP_STYLES = {
-  light: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
-  dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
-}
-
-const BD_BOUNDS = [
-  [87.5, 20.0], // southwest
-  [93.7, 27.5]  // northeast
-]
-
-const VIBRANT_PALETTE = {
-  water: '#8ec5ff',
-  land: '#fef6e4',
-  park: '#d8f3a1',
-  roadPrimary: '#ff6b6b',
-  roadSecondary: '#ffa94d',
-  roadOther: '#ffd166',
-}
-
-export default function Map() {
-  const mapContainer = useRef(null)
-  const mapRef = useRef(null)
-  const markersRef = useRef({})
-  const { dark } = useTheme()
-  const [hospitals, setHospitals] = useState([])
-  const [search, setSearch] = useState('')
-  const [selectedFilter, setSelectedFilter] = useState('all')
-  const [panelCollapsed, setPanelCollapsed] = useState(false)
-
-  // Initialize map
-  useEffect(() => {
-    if (mapRef.current) return
-
-    const map = new maplibregl.Map({
-      container: mapContainer.current,
-      style: dark ? MAP_STYLES.dark : MAP_STYLES.light,
-      center: [90.3563, 23.685],
-      zoom: 6.7,
-      maxBounds: BD_BOUNDS,
-      maxZoom: 16,
-      minZoom: 5,
-      attributionControl: false
-    })
-
-    map.addControl(new maplibregl.NavigationControl(), 'bottom-right')
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left')
-
-    map.once('load', () => {
-      map.fitBounds(BD_BOUNDS, { padding: 48 })
-      applyVibrantPalette(map)
-    })
-
-    map.on('styledata', () => applyVibrantPalette(map))
-
-    mapRef.current = map
-
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [])
-
-  // Update map style on theme change
-  useEffect(() => {
-    if (!mapRef.current) return
-    mapRef.current.setStyle(dark ? MAP_STYLES.dark : MAP_STYLES.light)
-  }, [dark])
-
-  // Fetch hospitals from API + real-time via Socket.IO
-  useEffect(() => {
-    const fetchHospitals = async () => {
-      try {
-        const data = await api.get('/hospitals')
-        setHospitals(data)
-      } catch {
-        setHospitals([])
-      }
-    }
-
-    fetchHospitals()
-
-    // Real-time updates
-    const onUpdate = (hospital) => {
-      setHospitals(prev => prev.map(h => h.id === hospital.id ? hospital : h))
-    }
-    const onCreate = (hospital) => {
-      setHospitals(prev => [...prev, hospital])
-    }
-    const onDelete = (id) => {
-      setHospitals(prev => prev.filter(h => h.id !== id))
-    }
-
-    socket.on('hospital:update', onUpdate)
-    socket.on('hospital:create', onCreate)
-    socket.on('hospital:delete', onDelete)
-
-    return () => {
-      socket.off('hospital:update', onUpdate)
-      socket.off('hospital:create', onCreate)
-      socket.off('hospital:delete', onDelete)
-    }
-  }, [])
-
-  // Render markers
-  useEffect(() => {
-    if (!mapRef.current) return
-
-    Object.values(markersRef.current).forEach(m => m.remove())
-    markersRef.current = {}
-
-    const filtered = hospitals.filter(h => {
-      const matchesSearch = !search || h.name?.toLowerCase().includes(search.toLowerCase()) || h.address?.toLowerCase().includes(search.toLowerCase())
-      const matchesFilter = selectedFilter === 'all' ||
-        (selectedFilter === 'available' && h.available_beds > 5) ||
-        (selectedFilter === 'limited' && h.available_beds >= 1 && h.available_beds <= 5) ||
-        (selectedFilter === 'full' && h.available_beds === 0)
-      return matchesSearch && matchesFilter
-    })
-
-    filtered.forEach(h => {
-      const lat = h.coordinates?.lat ?? 0
-      const lng = h.coordinates?.lng ?? 0
-      if (!lat && !lng) return
-
-      const color = getMarkerColor(h.available_beds ?? 0)
-      const glow = getMarkerGlow(h.available_beds ?? 0)
-      const status = getStatusText(h.available_beds ?? 0)
-      const bedsAvail = h.available_beds ?? 0
-
-      const el = document.createElement('div')
-      el.style.cssText = 'width:46px;height:46px;cursor:pointer;position:relative;filter:drop-shadow(0 10px 18px rgba(0,0,0,0.16));'
-      el.innerHTML = `
-        <div style="position:absolute;inset:4px;border-radius:16px;background:${glow};animation:pulse-ring 1.8s ease-out infinite;"></div>
-        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" style="position:relative;">
-          <defs>
-            <linearGradient id="grad-${h.id}" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="${color}" stop-opacity="0.95"/>
-              <stop offset="100%" stop-color="${color}CC"/>
-            </linearGradient>
-          </defs>
-          <circle cx="24" cy="24" r="18" fill="url(#grad-${h.id})" opacity="0.9"/>
-          <circle cx="24" cy="24" r="11" fill="white" opacity="0.12"/>
-          <circle cx="24" cy="24" r="9" fill="#0f172a" opacity="0.12"/>
-          <text x="24" y="27" text-anchor="middle" font-size="9" font-weight="800" fill="white">${bedsAvail}</text>
+const createDriverIcon = () => {
+  return L.divIcon({
+    className: 'custom-marker',
+    html: `
+      <div style="
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: #3b82f6;
+        border: 3px solid #1d4ed8;
+        box-shadow: 0 2px 8px rgba(59,130,246,0.4);
+        color: white;
+      ">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="3 11 22 2 13 21 11 13 3 11"/>
         </svg>
-      `
+      </div>
+    `,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+    popupAnchor: [0, -22],
+  });
+};
 
-      const popupContent = `
-        <div style="min-width:260px;font-family:system-ui,sans-serif;border-radius:16px;overflow:hidden;">
-          <div style="padding:16px 18px;background:linear-gradient(135deg,${color}22,${color}08);border-bottom:1px solid ${color}25;">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <div style="width:8px;height:8px;border-radius:50%;background:${color};box-shadow:0 0 8px ${glow};"></div>
-              <div style="font-weight:700;font-size:14px;color:var(--color-text,#0f172a);">${h.name || 'Hospital'}</div>
-            </div>
-            <div style="font-size:12px;color:var(--color-text-secondary,#64748b);margin-top:4px;padding-left:16px;">${h.address || 'Address not available'}</div>
-          </div>
-          <div style="padding:14px 18px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-              <span style="font-size:11px;font-weight:600;color:var(--color-text-muted,#94a3b8);text-transform:uppercase;letter-spacing:0.5px;">Status</span>
-              <span style="font-size:12px;font-weight:700;color:${color};background:${color}18;padding:3px 12px;border-radius:99px;border:1px solid ${color}30;">${status}</span>
-            </div>
-            <div style="display:flex;gap:10px;">
-              <div style="flex:1;background:linear-gradient(135deg,${color}12,${color}06);border:1px solid ${color}20;border-radius:12px;padding:12px;text-align:center;">
-                <div style="font-size:24px;font-weight:800;color:${color};line-height:1;">${bedsAvail}</div>
-                <div style="font-size:10px;font-weight:600;color:var(--color-text-muted,#94a3b8);margin-top:4px;text-transform:uppercase;letter-spacing:0.3px;">Available</div>
-              </div>
-              <div style="flex:1;background:var(--color-surface-hover,#f1f5f9);border:1px solid var(--color-border,#e2e8f0);border-radius:12px;padding:12px;text-align:center;">
-                <div style="font-size:24px;font-weight:800;color:var(--color-text,#0f172a);line-height:1;">${h.total_beds ?? 0}</div>
-                <div style="font-size:10px;font-weight:600;color:var(--color-text-muted,#94a3b8);margin-top:4px;text-transform:uppercase;letter-spacing:0.3px;">Total</div>
-              </div>
-            </div>
-            <div style="margin-top:12px;font-size:10px;color:var(--color-text-muted,#94a3b8);text-align:right;font-style:italic;">
-              Updated: ${formatTimestamp(h.last_updated)}
-            </div>
-          </div>
-        </div>
-      `
+const createUserIcon = () => {
+  return L.divIcon({
+    className: 'custom-marker',
+    html: `
+      <div style="
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #6366f1;
+        border: 3px solid white;
+        box-shadow: 0 2px 8px rgba(99,102,241,0.4);
+      "></div>
+    `,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+  });
+};
 
-      const popup = new maplibregl.Popup({ offset: 24, maxWidth: '320px', className: 'icu-popup' })
-        .setHTML(popupContent)
+function FitBounds({ hospitals }) {
+  const map = useMap();
 
-      const marker = new maplibregl.Marker({ element: el })
-        .setLngLat([lng, lat])
-        .setPopup(popup)
-        .addTo(mapRef.current)
+  useEffect(() => {
+    if (hospitals.length > 0) {
+      const bounds = L.latLngBounds(
+        hospitals.map((h) => [h.location.coordinates[1], h.location.coordinates[0]])
+      );
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+    }
+  }, [hospitals, map]);
 
-      markersRef.current[h.id] = marker
-    })
-  }, [hospitals, search, selectedFilter, dark])
+  return null;
+}
 
-  const stats = {
-    total: hospitals.length,
-    available: hospitals.filter(h => h.available_beds > 5).length,
-    limited: hospitals.filter(h => h.available_beds >= 1 && h.available_beds <= 5).length,
-    full: hospitals.filter(h => h.available_beds === 0).length,
-    totalBeds: hospitals.reduce((s, h) => s + (h.available_beds ?? 0), 0)
-  }
+function FlyTo({ position }) {
+  const map = useMap();
+  useEffect(() => {
+    if (position) {
+      map.flyTo(position, 15, { duration: 1.5 });
+    }
+  }, [position, map]);
+  return null;
+}
+
+function MapClickHandler({ active, onMapClick }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (active) {
+      map.getContainer().style.cursor = 'crosshair';
+    } else {
+      map.getContainer().style.cursor = '';
+    }
+    return () => {
+      map.getContainer().style.cursor = '';
+    };
+  }, [active, map]);
+
+  useMapEvents({
+    click(e) {
+      if (active) {
+        onMapClick({ lat: e.latlng.lat, lng: e.latlng.lng });
+      }
+    },
+  });
+
+  return null;
+}
+
+const createAddPinIcon = () => {
+  return L.divIcon({
+    className: 'custom-marker',
+    html: `
+      <div style="
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #7c3aed;
+        border: 3px solid #5b21b6;
+        box-shadow: 0 2px 12px rgba(124,58,237,0.5);
+        color: white;
+      ">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </div>
+    `,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+  });
+};
+
+export default function Map({
+  hospitals = [],
+  driverLocation,
+  userLocation,
+  selectedHospital,
+  onHospitalClick,
+  onRequestAmbulance,
+  onAddHospital,
+  showUser = false,
+  className = '',
+}) {
+  const mapRef = useRef(null);
+  const [addMode, setAddMode] = useState(false);
+  const [pinPosition, setPinPosition] = useState(null);
+
+  const defaultCenter = [23.7461, 90.3742]; // Dhaka
+  const defaultZoom = 12;
+
+  const flyToPosition = useMemo(() => {
+    if (selectedHospital) {
+      return [
+        selectedHospital.location.coordinates[1],
+        selectedHospital.location.coordinates[0],
+      ];
+    }
+    return null;
+  }, [selectedHospital]);
+
+  const handleMapClick = (coords) => {
+    setPinPosition(coords);
+    setAddMode(false);
+    onAddHospital?.(coords);
+  };
+
+  const cancelAddMode = () => {
+    setAddMode(false);
+    setPinPosition(null);
+  };
 
   return (
-    <div className="relative w-full h-full">
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-blue-50/70 via-transparent to-emerald-50/50 dark:from-slate-900/60 dark:via-transparent dark:to-slate-900/40 z-[1]" />
-      <div ref={mapContainer} className="w-full h-full" />
+    <div className={`relative overflow-hidden rounded-xl ${className}`}>
+      <MapContainer
+        center={defaultCenter}
+        zoom={defaultZoom}
+        className="h-full w-full"
+        ref={mapRef}
+        zoomControl={false}
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
 
-      {/* Search & Filter Panel */}
-      <div className="absolute top-[76px] left-3 right-3 sm:left-4 sm:right-auto sm:w-[360px] lg:w-[380px] z-10">
-        <div className="bg-white/95 backdrop-blur-md dark:bg-slate-800/90 rounded-xl shadow-lg shadow-black/[0.08] dark:shadow-black/30 border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <MapClickHandler active={addMode} onMapClick={handleMapClick} />
 
-          {/* Search input */}
-          <div className="p-3 pb-2">
-            <div className="relative">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search hospitals..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 dark:bg-slate-900/60 text-slate-900 dark:text-slate-100 rounded-lg border border-slate-200 dark:border-slate-600/80 outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all"
-              />
-              <button
-                onClick={() => setPanelCollapsed(!panelCollapsed)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 sm:hidden"
-              >
-                <svg className={`w-4 h-4 transition-transform ${panelCollapsed ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5" />
-                </svg>
-              </button>
-            </div>
-          </div>
+        {hospitals.length > 0 && !selectedHospital && <FitBounds hospitals={hospitals} />}
+        {flyToPosition && <FlyTo position={flyToPosition} />}
 
-          {!panelCollapsed && (
-            <>
-              <div className="px-3 pb-2.5 flex gap-1.5 flex-wrap">
-                {[
-                  { key: 'all', label: 'All', count: stats.total, dot: null },
-                  { key: 'available', label: 'Available', count: stats.available, dot: 'bg-emerald-500' },
-                  { key: 'limited', label: 'Limited', count: stats.limited, dot: 'bg-yellow-500' },
-                  { key: 'full', label: 'Full', count: stats.full, dot: 'bg-red-500' },
-                ].map(f => (
-                  <button
-                    key={f.key}
-                    onClick={() => setSelectedFilter(f.key)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                      selectedFilter === f.key
-                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
-                        : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600/60'
-                    }`}
-                  >
-                    {f.dot && <span className={`w-2 h-2 rounded-full ${selectedFilter === f.key ? 'bg-white/70' : f.dot}`} />}
-                    {f.label}
-                    <span className={`font-semibold ${selectedFilter === f.key ? 'text-blue-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                      {f.count}
+        {/* Hospital markers */}
+        {hospitals.map((hospital) => (
+          <Marker
+            key={hospital._id}
+            position={[hospital.location.coordinates[1], hospital.location.coordinates[0]]}
+            icon={createHospitalIcon(hospital.available_icu_beds, hospital.total_icu_beds)}
+            eventHandlers={{
+              click: () => onHospitalClick?.(hospital),
+            }}
+          >
+            <Popup>
+              <div className="p-3">
+                <h3 className="text-sm font-semibold text-gray-900">{hospital.name}</h3>
+                <p className="mt-1 flex items-center gap-1 text-xs text-gray-500">
+                  <MapPin className="h-3 w-3" />
+                  {hospital.address}
+                </p>
+
+                <div className="mt-3 flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <Bed className="h-4 w-4 text-primary-600" />
+                    <span className="text-sm font-semibold text-gray-900">
+                      {hospital.available_icu_beds}
                     </span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900/40 border-t border-slate-100 dark:border-slate-700/60">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Total available beds</span>
-                  <span className="text-base font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{stats.totalBeds}</span>
+                    <span className="text-xs text-gray-500">/ {hospital.total_icu_beds}</span>
+                  </div>
+                  <BedBadge available={hospital.available_icu_beds} total={hospital.total_icu_beds} />
                 </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
 
-      {/* Legend */}
-      <div className="absolute bottom-6 left-3 sm:left-4 z-10">
-        <div className="bg-white/95 backdrop-blur-md dark:bg-slate-800/90 rounded-lg shadow-lg shadow-black/[0.08] dark:shadow-black/30 border border-slate-200 dark:border-slate-700 px-3.5 py-2.5">
-          <div className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Legend</div>
-          <div className="flex gap-3.5 text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" />
-              <span className="text-slate-600 dark:text-slate-300">&gt;5 beds</span>
+                {hospital.contact?.phone && (
+                  <p className="mt-2 flex items-center gap-1 text-xs text-gray-500">
+                    <Phone className="h-3 w-3" />
+                    {hospital.contact.phone}
+                  </p>
+                )}
+
+                {onRequestAmbulance && (
+                  <button
+                    onClick={() => onRequestAmbulance(hospital)}
+                    className="btn-primary mt-3 w-full text-xs"
+                  >
+                    <Navigation className="h-3.5 w-3.5" />
+                    Request Ambulance
+                  </button>
+                )}
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+        {/* Placed pin for new hospital */}
+        {pinPosition && (
+          <Marker
+            position={[pinPosition.lat, pinPosition.lng]}
+            icon={createAddPinIcon()}
+          />
+        )}
+
+        {/* Driver location */}
+        {driverLocation && (
+          <Marker
+            position={[driverLocation.latitude, driverLocation.longitude]}
+            icon={createDriverIcon()}
+          >
+            <Popup>
+              <div className="p-2 text-sm font-medium">Ambulance Location</div>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* User location */}
+        {showUser && userLocation && (
+          <>
+            <Marker
+              position={[userLocation.latitude, userLocation.longitude]}
+              icon={createUserIcon()}
+            />
+            <Circle
+              center={[userLocation.latitude, userLocation.longitude]}
+              radius={100}
+              pathOptions={{
+                color: '#6366f1',
+                fillColor: '#6366f1',
+                fillOpacity: 0.1,
+                weight: 1,
+              }}
+            />
+          </>
+        )}
+      </MapContainer>
+
+      {/* Admin add hospital button */}
+      {onAddHospital && (
+        <>
+          <button
+            onClick={() => {
+              if (addMode) {
+                cancelAddMode();
+              } else {
+                setPinPosition(null);
+                setAddMode(true);
+              }
+            }}
+            className={`absolute right-3 top-3 z-[1000] flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-all ${
+              addMode
+                ? 'bg-red-500 text-white hover:bg-red-600'
+                : 'bg-primary-600 text-white hover:bg-primary-700'
+            }`}
+            title={addMode ? 'Cancel' : 'Add Hospital'}
+          >
+            <Plus className={`h-5 w-5 transition-transform ${addMode ? 'rotate-45' : ''}`} />
+          </button>
+
+          {addMode && (
+            <div className="absolute right-14 top-3 z-[1000] rounded-lg bg-black/75 px-3 py-2 text-xs font-medium text-white shadow-lg">
+              Click on the map to place hospital
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 ring-2 ring-yellow-500/20" />
-              <span className="text-slate-600 dark:text-slate-300">1-5 beds</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-red-500/20" />
-              <span className="text-slate-600 dark:text-slate-300">0 beds</span>
-            </div>
-          </div>
-        </div>
-      </div>
+          )}
+        </>
+      )}
     </div>
-  )
+  );
 }
+
+function BedBadge({ available, total }) {
+  if (available === 0) return <span className="badge-red">No beds</span>;
+  const ratio = total > 0 ? available / total : 0;
+  if (ratio <= 0.2) return <span className="badge-yellow">Low</span>;
+  return <span className="badge-green">Available</span>;
+}
+
+export { BedBadge, createHospitalIcon, createDriverIcon };

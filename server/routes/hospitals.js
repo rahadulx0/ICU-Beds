@@ -1,127 +1,429 @@
-import { Router } from 'express'
-import { getModels } from '../db.js'
-import { authenticate, requireRole, requireActive } from '../middleware/auth.js'
+const express = require('express');
+const Hospital = require('../models/Hospital');
+const AmbulanceRequest = require('../models/AmbulanceRequest');
+const User = require('../models/User');
+const Notification = require('../models/Notification');
+const AuditLog = require('../models/AuditLog');
+const BedHistory = require('../models/BedHistory');
+const auth = require('../middleware/auth');
+const checkRole = require('../middleware/role');
+const validate = require('../middleware/validate');
+const {
+  createHospitalSchema,
+  updateBedSchema,
+  updateHospitalSchema,
+  nearbyQuerySchema,
+} = require('../schemas/hospital');
+const { cacheGet, cacheSet, cacheInvalidate } = require('../config/redis');
+const asyncHandler = require('../utils/asyncHandler');
+const logger = require('../utils/logger');
 
-const router = Router()
+const router = express.Router();
 
-function formatHospital(row) {
-  const hospital = row?.toJSON ? row.toJSON() : { ...row }
-  if (hospital._id) {
-    hospital.id = hospital._id.toString()
-    delete hospital._id
-  }
-  if (hospital.assigned_rep_id) hospital.assigned_rep_id = hospital.assigned_rep_id.toString()
-  hospital.coordinates = { lat: Number(hospital.lat) || 0, lng: Number(hospital.lng) || 0 }
-  return hospital
-}
+// GET /api/hospitals - Public: list all active hospitals
+router.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    // Try cache first
+    const cached = await cacheGet('hospitals:active:all');
+    if (cached) return res.json(cached);
 
-// GET /api/hospitals (public)
-router.get('/', async (req, res) => {
-  try {
-    const { Hospital } = getModels()
-    const hospitals = await Hospital.find().sort({ name: 1 })
-    res.json(hospitals.map(formatHospital))
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+    const hospitals = await Hospital.find({ status: 'active' })
+      .select('-managed_by -__v')
+      .lean();
 
-// POST /api/hospitals (admin only)
-router.post('/', authenticate, requireActive, requireRole('admin'), async (req, res) => {
-  try {
-    const { name, address, coordinates, total_beds, available_beds } = req.body
-    const lat = coordinates?.lat || 0
-    const lng = coordinates?.lng || 0
+    await cacheSet('hospitals:active:all', hospitals, 60);
+    res.json(hospitals);
+  })
+);
 
-    const { Hospital } = getModels()
+// GET /api/hospitals/nearby - Public: geospatial search
+router.get(
+  '/nearby',
+  validate(nearbyQuerySchema, 'query'),
+  asyncHandler(async (req, res) => {
+    const { lng, lat, radius, beds } = req.validatedQuery;
+
+    const query = {
+      status: 'active',
+      location: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [lng, lat],
+          },
+          $maxDistance: radius,
+        },
+      },
+    };
+
+    if (beds === 'true') {
+      query.available_icu_beds = { $gt: 0 };
+    }
+
+    const hospitals = await Hospital.find(query)
+      .select('-managed_by -__v')
+      .lean();
+    res.json(hospitals);
+  })
+);
+
+// GET /api/hospitals/:id
+router.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const hospital = await Hospital.findById(req.params.id)
+      .populate('managed_by', 'name email role')
+      .lean();
+
+    if (!hospital) {
+      return res.status(404).json({ message: 'Hospital not found' });
+    }
+
+    res.json(hospital);
+  })
+);
+
+// POST /api/hospitals - Admin only
+router.post(
+  '/',
+  auth,
+  checkRole(['admin']),
+  validate(createHospitalSchema),
+  asyncHandler(async (req, res) => {
+    const {
+      name,
+      address,
+      longitude,
+      latitude,
+      total_icu_beds,
+      available_icu_beds,
+      contact,
+    } = req.validatedBody;
+
     const hospital = await Hospital.create({
       name,
-      address: address || '',
-      lat,
-      lng,
-      total_beds: total_beds || 0,
-      available_beds: available_beds || 0,
-      last_updated: new Date(),
-    })
+      address,
+      location: {
+        type: 'Point',
+        coordinates: [longitude, latitude],
+      },
+      total_icu_beds,
+      available_icu_beds: available_icu_beds ?? total_icu_beds,
+      contact,
+    });
 
-    const clean = formatHospital(hospital)
-    req.app.get('io')?.emit('hospital:create', clean)
-    res.status(201).json(clean)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+    await cacheInvalidate('hospitals:*');
 
-// PUT /api/hospitals/:id
-router.put('/:id', authenticate, requireActive, async (req, res) => {
-  try {
-    const { Hospital } = getModels()
-    const hospital = await Hospital.findById(req.params.id)
-    if (!hospital) return res.status(404).json({ error: 'Hospital not found' })
+    AuditLog.create({
+      actor: req.user._id,
+      action: 'hospital.create',
+      resource_type: 'hospital',
+      resource_id: hospital._id,
+      details: { name: hospital.name },
+      ip_address: req.ip,
+    }).catch(() => {});
 
-    const { role, id: userId } = req.user
-    const assignedIds = (req.user.assigned_hospitals || []).map(String)
+    logger.info(`Hospital created: ${hospital.name} by ${req.user.email}`);
+    res.status(201).json(hospital);
+  })
+);
 
-    // Permission check
-    if (role === 'admin') {
-      // full access
-    } else if (role === 'moderator') {
-      if (!assignedIds.includes(hospital.id)) {
-        return res.status(403).json({ error: 'Not assigned to this hospital' })
-      }
-    } else if (role === 'rep') {
-      if (!assignedIds.includes(hospital.id) && hospital.assigned_rep_id?.toString() !== userId) {
-        return res.status(403).json({ error: 'Not assigned to this hospital' })
-      }
-    } else {
-      return res.status(403).json({ error: 'Insufficient permissions' })
+// PUT /api/hospitals/:id - Admin/Moderator
+router.put(
+  '/:id',
+  auth,
+  checkRole(['admin', 'moderator']),
+  validate(updateHospitalSchema),
+  asyncHandler(async (req, res) => {
+    const hospital = await Hospital.findById(req.params.id);
+    if (!hospital) {
+      return res.status(404).json({ message: 'Hospital not found' });
     }
 
-    const b = req.body
-    const updates = {}
-
-    if (b.name !== undefined) updates.name = b.name
-    if (b.address !== undefined) updates.address = b.address
-    if (b.coordinates) {
-      updates.lat = b.coordinates.lat || 0
-      updates.lng = b.coordinates.lng || 0
+    // Moderators can only manage assigned hospitals
+    if (
+      req.user.role === 'moderator' &&
+      !req.user.assigned_hospitals.some(
+        (id) => id.toString() === hospital._id.toString()
+      )
+    ) {
+      return res
+        .status(403)
+        .json({ message: 'Not assigned to this hospital' });
     }
-    if (b.total_beds !== undefined) updates.total_beds = parseInt(b.total_beds) || 0
-    if (b.available_beds !== undefined) updates.available_beds = parseInt(b.available_beds) || 0
-    if (b.icu_ventilators !== undefined) updates.icu_ventilators = parseInt(b.icu_ventilators) || 0
-    if (b.available_ventilators !== undefined) updates.available_ventilators = parseInt(b.available_ventilators) || 0
-    if (b.phone !== undefined) updates.phone = b.phone
-    if (b.email !== undefined) updates.email = b.email
-    if (b.website !== undefined) updates.website = b.website
-    if (b.emergency_contact !== undefined) updates.emergency_contact = b.emergency_contact
-    if (b.department !== undefined) updates.department = b.department
-    if (b.head_doctor !== undefined) updates.head_doctor = b.head_doctor
-    if (b.notes !== undefined) updates.notes = b.notes
-    if (b.assigned_rep_id !== undefined) updates.assigned_rep_id = b.assigned_rep_id || null
 
-    updates.last_updated = new Date()
+    const updates = req.validatedBody;
+    if (updates.longitude !== undefined && updates.latitude !== undefined) {
+      updates.location = {
+        type: 'Point',
+        coordinates: [updates.longitude, updates.latitude],
+      };
+      delete updates.longitude;
+      delete updates.latitude;
+    }
 
-    const updated = await Hospital.findByIdAndUpdate(req.params.id, updates, { new: true })
-    const clean = formatHospital(updated)
-    req.app.get('io')?.emit('hospital:update', clean)
-    res.json(clean)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+    Object.assign(hospital, updates);
+    await hospital.save();
 
-// DELETE /api/hospitals/:id (admin only)
-router.delete('/:id', authenticate, requireActive, requireRole('admin'), async (req, res) => {
-  try {
-    const { Hospital } = getModels()
-    const deleted = await Hospital.findByIdAndDelete(req.params.id)
-    if (!deleted) return res.status(404).json({ error: 'Hospital not found' })
+    await cacheInvalidate('hospitals:*');
 
-    req.app.get('io')?.emit('hospital:delete', req.params.id)
-    res.json({ message: 'Hospital deleted' })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+    AuditLog.create({
+      actor: req.user._id,
+      action: 'hospital.update',
+      resource_type: 'hospital',
+      resource_id: hospital._id,
+      details: { name: hospital.name, updates: Object.keys(updates) },
+      ip_address: req.ip,
+    }).catch(() => {});
 
-export default router
+    logger.info(`Hospital updated: ${hospital.name} by ${req.user.email}`);
+    res.json(hospital);
+  })
+);
+
+// PATCH /api/hospitals/:id/beds - Hospital Rep: update bed count with OCC
+router.patch(
+  '/:id/beds',
+  auth,
+  checkRole(['admin', 'moderator', 'hospital_rep']),
+  validate(updateBedSchema),
+  asyncHandler(async (req, res) => {
+    const { available_icu_beds, version } = req.validatedBody;
+
+    // Hospital reps can only update their assigned hospital
+    if (
+      req.user.role === 'hospital_rep' &&
+      !req.user.assigned_hospitals.some(
+        (id) => id.toString() === req.params.id
+      )
+    ) {
+      return res
+        .status(403)
+        .json({ message: 'Not assigned to this hospital' });
+    }
+
+    // Validate bed count BEFORE writing to DB
+    const existing = await Hospital.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: 'Hospital not found' });
+    }
+
+    if (available_icu_beds < 0) {
+      return res
+        .status(400)
+        .json({ message: 'Available beds cannot be negative' });
+    }
+
+    if (available_icu_beds > existing.total_icu_beds) {
+      return res.status(400).json({
+        message: 'Available beds cannot exceed total beds',
+      });
+    }
+
+    // Optimistic Concurrency Control
+    const hospital = await Hospital.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        version: version,
+      },
+      {
+        available_icu_beds,
+        $inc: { version: 1 },
+      },
+      { new: true }
+    );
+
+    if (!hospital) {
+      return res.status(409).json({
+        message:
+          'Conflict: data was modified by another user. Please refresh and try again.',
+        currentVersion: existing.version,
+        currentBeds: existing.available_icu_beds,
+      });
+    }
+
+    await cacheInvalidate('hospitals:*');
+
+    // Record bed history
+    BedHistory.create({
+      hospital: hospital._id,
+      available_icu_beds: hospital.available_icu_beds,
+      total_icu_beds: hospital.total_icu_beds,
+      updated_by: req.user._id,
+    }).catch(() => {});
+
+    // Low bed alert notification to assigned managers
+    if (
+      hospital.available_icu_beds === 0 ||
+      hospital.available_icu_beds / hospital.total_icu_beds <= 0.2
+    ) {
+      const managedBy = await Hospital.findById(hospital._id)
+        .select('managed_by')
+        .lean();
+      if (managedBy?.managed_by?.length) {
+        const notifications = managedBy.managed_by.map((userId) => ({
+          user: userId,
+          type: 'low_bed_alert',
+          title: 'Low ICU Bed Alert',
+          message: `${hospital.name} has ${hospital.available_icu_beds}/${hospital.total_icu_beds} ICU beds available`,
+          data: { hospitalId: hospital._id },
+        }));
+        Notification.insertMany(notifications).catch(() => {});
+
+        const io2 = req.app.get('io');
+        if (io2) {
+          managedBy.managed_by.forEach((userId) => {
+            io2.to(`user-${userId}`).emit('notification', {
+              type: 'low_bed_alert',
+              title: 'Low ICU Bed Alert',
+              message: `${hospital.name}: ${hospital.available_icu_beds}/${hospital.total_icu_beds} beds`,
+            });
+          });
+        }
+      }
+    }
+
+    AuditLog.create({
+      actor: req.user._id,
+      action: 'hospital.bed_update',
+      resource_type: 'hospital',
+      resource_id: hospital._id,
+      details: { available_icu_beds, previous: existing.available_icu_beds },
+      ip_address: req.ip,
+    }).catch(() => {});
+
+    logger.info(
+      `Bed update: ${hospital.name} → ${available_icu_beds} beds by ${req.user.email}`
+    );
+
+    // Emit real-time update via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('bed-update', {
+        hospitalId: hospital._id,
+        available_icu_beds: hospital.available_icu_beds,
+        total_icu_beds: hospital.total_icu_beds,
+        version: hospital.version,
+      });
+    }
+
+    res.json(hospital);
+  })
+);
+
+// DELETE /api/hospitals/:id - Admin only
+router.delete(
+  '/:id',
+  auth,
+  checkRole(['admin']),
+  asyncHandler(async (req, res) => {
+    const hospital = await Hospital.findById(req.params.id);
+    if (!hospital) {
+      return res.status(404).json({ message: 'Hospital not found' });
+    }
+
+    // Check for active ambulance requests
+    const activeRequests = await AmbulanceRequest.countDocuments({
+      hospital: req.params.id,
+      status: { $in: ['pending', 'accepted', 'en-route'] },
+    });
+    if (activeRequests > 0) {
+      return res.status(409).json({
+        message: `Cannot delete hospital with ${activeRequests} active ambulance request(s)`,
+      });
+    }
+
+    await hospital.deleteOne();
+
+    // Remove hospital from all users' assigned_hospitals
+    await User.updateMany(
+      { assigned_hospitals: hospital._id },
+      { $pull: { assigned_hospitals: hospital._id } }
+    );
+
+    await cacheInvalidate('hospitals:*');
+
+    AuditLog.create({
+      actor: req.user._id,
+      action: 'hospital.delete',
+      resource_type: 'hospital',
+      resource_id: hospital._id,
+      details: { name: hospital.name },
+      ip_address: req.ip,
+    }).catch(() => {});
+
+    logger.info(`Hospital deleted: ${hospital.name} by ${req.user.email}`);
+    res.json({ message: 'Hospital deleted successfully' });
+  })
+);
+
+// PUT /api/hospitals/:id/assign - Admin: assign reps/moderators
+router.put(
+  '/:id/assign',
+  auth,
+  checkRole(['admin']),
+  asyncHandler(async (req, res) => {
+    const { userId } = req.body;
+    const hospital = await Hospital.findById(req.params.id);
+    if (!hospital) {
+      return res.status(404).json({ message: 'Hospital not found' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (!['moderator', 'hospital_rep'].includes(user.role)) {
+      return res
+        .status(400)
+        .json({ message: 'User must be a moderator or hospital rep' });
+    }
+
+    if (!hospital.managed_by.includes(userId)) {
+      hospital.managed_by.push(userId);
+      await hospital.save();
+    }
+
+    await User.findByIdAndUpdate(userId, {
+      $addToSet: { assigned_hospitals: hospital._id },
+    });
+
+    const updated = await Hospital.findById(req.params.id).populate(
+      'managed_by',
+      'name email role'
+    );
+    res.json(updated);
+  })
+);
+
+// PUT /api/hospitals/:id/unassign - Admin: unassign reps/moderators
+router.put(
+  '/:id/unassign',
+  auth,
+  checkRole(['admin']),
+  asyncHandler(async (req, res) => {
+    const { userId } = req.body;
+    const hospital = await Hospital.findById(req.params.id);
+    if (!hospital) {
+      return res.status(404).json({ message: 'Hospital not found' });
+    }
+
+    hospital.managed_by = hospital.managed_by.filter(
+      (id) => id.toString() !== userId
+    );
+    await hospital.save();
+
+    await User.findByIdAndUpdate(userId, {
+      $pull: { assigned_hospitals: hospital._id },
+    });
+
+    const updated = await Hospital.findById(req.params.id).populate(
+      'managed_by',
+      'name email role'
+    );
+    res.json(updated);
+  })
+);
+
+module.exports = router;

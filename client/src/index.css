@@ -1,115 +1,139 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@custom-variant dark (&:where(.dark, .dark *));
-
-:root {
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
-  --color-bg: #f8fafc;
-  --color-surface: #ffffff;
-  --color-surface-hover: #f1f5f9;
-  --color-border: #e2e8f0;
-  --color-text: #0f172a;
-  --color-text-secondary: #475569;
-  --color-text-muted: #94a3b8;
-}
-
-.dark {
-  --color-primary: #3b82f6;
-  --color-primary-hover: #60a5fa;
-  --color-bg: #0f172a;
-  --color-surface: #1e293b;
-  --color-surface-hover: #334155;
-  --color-border: #334155;
-  --color-text: #f1f5f9;
-  --color-text-secondary: #cbd5e1;
-  --color-text-muted: #64748b;
-}
-
-html, body, #root {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  width: 100%;
-}
-
-body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: var(--color-bg);
-  color: var(--color-text);
-  transition: background-color 0.3s, color 0.3s;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* MapLibre popup overrides */
-.maplibregl-popup-content {
-  border-radius: 12px !important;
-  padding: 0 !important;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.15) !important;
-  overflow: hidden;
-  border: 1px solid rgba(0,0,0,0.06) !important;
-}
-
-.dark .maplibregl-popup-content {
-  background: #1e293b !important;
-  color: #f1f5f9 !important;
-  border-color: rgba(255,255,255,0.08) !important;
-}
-
-.maplibregl-popup-close-button {
-  font-size: 18px;
-  padding: 4px 8px;
-  color: #64748b;
-  z-index: 10;
-}
-
-.dark .maplibregl-popup-close-button {
-  color: #94a3b8;
-}
-
-.maplibregl-ctrl-attrib {
-  font-size: 10px !important;
-}
-
-/* Ensure MapLibre controls don't get broken */
-.maplibregl-ctrl-group button {
-  box-sizing: content-box;
-}
-
-/* Marker pulse animation */
-@keyframes pulse-ring {
-  0% {
-    transform: scale(0.8);
-    opacity: 0.6;
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
   }
-  50% {
-    opacity: 0.3;
+
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased dark:bg-gray-900 dark:text-gray-100;
   }
-  100% {
-    transform: scale(1.6);
-    opacity: 0;
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full dark:bg-gray-600;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400 dark:bg-gray-500;
   }
 }
 
-/* Popup styling */
-.icu-popup .maplibregl-popup-content {
-  border-radius: 16px !important;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.08) !important;
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed dark:focus:ring-offset-gray-900;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:ring-offset-gray-900;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed dark:focus:ring-offset-gray-900;
+  }
+
+  .btn-success {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed dark:focus:ring-offset-gray-900;
+  }
+
+  .input {
+    @apply block w-full rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-700 mb-1.5 dark:text-gray-300;
+  }
+
+  .card {
+    @apply rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .badge-green {
+    @apply badge bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20 dark:bg-emerald-900/30 dark:text-emerald-400 dark:ring-emerald-400/30;
+  }
+
+  .badge-yellow {
+    @apply badge bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-900/30 dark:text-amber-400 dark:ring-amber-400/30;
+  }
+
+  .badge-red {
+    @apply badge bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20 dark:bg-red-900/30 dark:text-red-400 dark:ring-red-400/30;
+  }
+
+  .badge-blue {
+    @apply badge bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20 dark:bg-blue-900/30 dark:text-blue-400 dark:ring-blue-400/30;
+  }
+
+  .badge-gray {
+    @apply badge bg-gray-50 text-gray-600 ring-1 ring-inset ring-gray-500/10 dark:bg-gray-700 dark:text-gray-300 dark:ring-gray-500/30;
+  }
 }
 
-.dark .icu-popup .maplibregl-popup-content {
-  box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3) !important;
+/* Leaflet overrides */
+.leaflet-container {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  z-index: 0;
 }
 
-/* Toast slide-in animation */
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateX(100%) scale(0.95);
+.leaflet-popup-content-wrapper {
+  @apply rounded-xl shadow-lg border border-gray-100 !important;
+}
+
+.dark .leaflet-popup-content-wrapper {
+  @apply bg-gray-800 border-gray-700 !important;
+}
+
+.dark .leaflet-popup-tip {
+  background: #1f2937 !important;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+  min-width: 220px;
+}
+
+.leaflet-popup-close-button {
+  @apply text-gray-400 hover:text-gray-600 !important;
+  top: 8px !important;
+  right: 10px !important;
+}
+
+.dark .leaflet-popup-close-button {
+  @apply text-gray-500 hover:text-gray-300 !important;
+}
+
+/* Mobile map improvements */
+@media (max-width: 640px) {
+  .leaflet-popup-content {
+    min-width: 180px;
+    max-width: 250px;
   }
-  to {
-    opacity: 1;
-    transform: translateX(0) scale(1);
+
+  .leaflet-control-zoom {
+    margin-top: 8px !important;
+    margin-right: 8px !important;
   }
+
+  .leaflet-control-attribution {
+    font-size: 8px !important;
+    max-width: 50vw;
+  }
+}
+
+/* Dark mode map tiles — invert OSM tiles to a colorful dark palette */
+.dark .leaflet-tile-pane {
+  filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
 }

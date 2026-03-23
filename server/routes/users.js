@@ -1,83 +1,208 @@
-import { Router } from 'express'
-import { getModels } from '../db.js'
-import { authenticate, requireRole, requireActive } from '../middleware/auth.js'
+const express = require('express');
+const User = require('../models/User');
+const auth = require('../middleware/auth');
+const checkRole = require('../middleware/role');
+const asyncHandler = require('../utils/asyncHandler');
 
-const router = Router()
+const router = express.Router();
 
-router.use(authenticate, requireActive, requireRole('admin'))
+// GET /api/users - Admin: list all users
+router.get(
+  '/',
+  auth,
+  checkRole(['admin']),
+  asyncHandler(async (req, res) => {
+    const { role, page = 1, limit = 50 } = req.query;
+    const filter = {};
+    if (role) filter.role = role;
 
-function sanitizeUser(row) {
-  const user = row?.toJSON ? row.toJSON() : { ...row }
-  if (user._id) {
-    user.id = user._id.toString()
-    delete user._id
-  }
-  if (user.assigned_hospitals) {
-    user.assigned_hospitals = user.assigned_hospitals.map(id => id.toString())
-  }
-  delete user.password
-  return user
-}
+    const users = await User.find(filter)
+      .select('-password')
+      .populate('assigned_hospitals', 'name')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit))
+      .lean();
 
-// GET /api/users
-router.get('/', async (req, res) => {
-  try {
-    const { User } = getModels()
-    const users = await User.find().sort({ createdAt: -1 })
-    res.json(users.map(sanitizeUser))
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+    const total = await User.countDocuments(filter);
 
-// PUT /api/users/:id/approve
-router.put('/:id/approve', async (req, res) => {
-  try {
-    const { User } = getModels()
-    const user = await User.findByIdAndUpdate(req.params.id, { status: 'active' }, { new: true })
-    if (!user) return res.status(404).json({ error: 'User not found' })
+    res.json({
+      users,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  })
+);
 
-    const clean = sanitizeUser(user)
-    req.app.get('io')?.emit('user:update', clean)
-    res.json(clean)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+// --- Static routes BEFORE parameterized /:id routes ---
 
-// PUT /api/users/:id
-router.put('/:id', async (req, res) => {
-  try {
-    const { role, assigned_hospitals, status } = req.body
-    const { User } = getModels()
-    const updates = {}
-    if (role) updates.role = role
-    if (assigned_hospitals) updates.assigned_hospitals = assigned_hospitals
-    if (status) updates.status = status
+// GET /api/users/drivers - Get online drivers
+router.get(
+  '/drivers',
+  auth,
+  asyncHandler(async (req, res) => {
+    const drivers = await User.find({
+      role: 'driver',
+      is_online: true,
+      is_active: true,
+    })
+      .select('name phone vehicle_details current_location is_online')
+      .lean();
 
-    const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true })
-    if (!user) return res.status(404).json({ error: 'User not found' })
+    res.json(drivers);
+  })
+);
 
-    const clean = sanitizeUser(user)
-    req.app.get('io')?.emit('user:update', clean)
-    res.json(clean)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+// GET /api/users/stats - Admin: user statistics
+router.get(
+  '/stats',
+  auth,
+  checkRole(['admin']),
+  asyncHandler(async (req, res) => {
+    const stats = await User.aggregate([
+      { $group: { _id: '$role', count: { $sum: 1 } } },
+    ]);
 
-// DELETE /api/users/:id
-router.delete('/:id', async (req, res) => {
-  try {
-    const { User } = getModels()
-    const deleted = await User.findByIdAndDelete(req.params.id)
-    if (!deleted) return res.status(404).json({ error: 'User not found' })
+    const total = await User.countDocuments();
+    const activeDrivers = await User.countDocuments({
+      role: 'driver',
+      is_online: true,
+    });
 
-    req.app.get('io')?.emit('user:delete', req.params.id)
-    res.json({ message: 'User deleted' })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+    res.json({ stats, total, activeDrivers });
+  })
+);
 
-export default router
+// PUT /api/users/profile - Update own profile
+router.put(
+  '/profile',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { name, phone } = req.body;
+    const updates = {};
+    if (name) updates.name = name;
+    if (phone) updates.phone = phone;
+
+    const user = await User.findByIdAndUpdate(req.user._id, updates, {
+      new: true,
+    }).select('-password');
+
+    res.json(user);
+  })
+);
+
+// PUT /api/users/driver/status - Driver: toggle online status
+router.put(
+  '/driver/status',
+  auth,
+  checkRole(['driver']),
+  asyncHandler(async (req, res) => {
+    const { is_online } = req.body;
+    const updates = { is_online };
+
+    // Clear location when going offline
+    if (!is_online) {
+      updates.current_location = undefined;
+    }
+
+    const user = await User.findByIdAndUpdate(req.user._id, updates, {
+      new: true,
+    }).select('-password');
+
+    res.json(user);
+  })
+);
+
+// PUT /api/users/change-password - Change own password
+router.put(
+  '/change-password',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res
+        .status(400)
+        .json({ message: 'Current and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res
+        .status(400)
+        .json({ message: 'New password must be at least 6 characters' });
+    }
+
+    const user = await User.findById(req.user._id).select('+password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res
+        .status(401)
+        .json({ message: 'Current password is incorrect' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ message: 'Password changed successfully' });
+  })
+);
+
+// --- Parameterized /:id routes ---
+
+// PUT /api/users/:id/role - Admin: update user role
+router.put(
+  '/:id/role',
+  auth,
+  checkRole(['admin']),
+  asyncHandler(async (req, res) => {
+    const { role } = req.body;
+    if (
+      !['admin', 'moderator', 'hospital_rep', 'user', 'driver'].includes(role)
+    ) {
+      return res.status(400).json({ message: 'Invalid role' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { role },
+      { new: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json(user);
+  })
+);
+
+// PUT /api/users/:id/status - Admin: activate/deactivate
+router.put(
+  '/:id/status',
+  auth,
+  checkRole(['admin']),
+  asyncHandler(async (req, res) => {
+    const { is_active } = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { is_active },
+      { new: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json(user);
+  })
+);
+
+module.exports = router;

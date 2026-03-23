@@ -1,162 +1,291 @@
-import { Router } from 'express'
-import jwt from 'jsonwebtoken'
-import bcrypt from 'bcryptjs'
-import { getModels } from '../db.js'
-import { authenticate } from '../middleware/auth.js'
+const express = require('express');
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const auth = require('../middleware/auth');
+const validate = require('../middleware/validate');
+const { authLimiter } = require('../middleware/rateLimiter');
+const { registerSchema, loginSchema } = require('../schemas/auth');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/email');
+const asyncHandler = require('../utils/asyncHandler');
 
-const router = Router()
+const router = express.Router();
 
-function signToken(id) {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' })
-}
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+};
 
-function sanitizeUser(userDoc) {
-  const user = userDoc?.toJSON ? userDoc.toJSON() : { ...userDoc }
-  if (user._id) {
-    user.id = user._id.toString()
-    delete user._id
-  }
-  if (user.assigned_hospitals) {
-    user.assigned_hospitals = user.assigned_hospitals.map(id => id.toString())
-  }
-  delete user.password
-  user.role = user.role || 'rep'
-  return user
-}
+const setCookie = (res, token) => {
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+};
 
-// POST /api/auth/signup
-router.post('/signup', async (req, res) => {
-  try {
-    const { email, password, role, displayName } = req.body
-    const { User } = getModels()
+// POST /api/auth/register
+router.post(
+  '/register',
+  authLimiter,
+  validate(registerSchema),
+  asyncHandler(async (req, res) => {
+    const { name, email, password, phone, role, vehicle_details } =
+      req.validatedBody;
 
-    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' })
-    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' })
-
-    const allowedRoles = ['rep', 'moderator', 'admin']
-    const requestedRole = (role || '').toLowerCase().trim()
-    const finalRole = allowedRoles.includes(requestedRole) ? requestedRole : 'rep'
-
-    const existing = await User.findOne({ email })
-    if (existing) return res.status(409).json({ error: 'An account with this email already exists' })
-
-    if (finalRole === 'admin') {
-      const admins = await User.countDocuments({ role: 'admin' })
-      if (admins >= 2) return res.status(400).json({ error: 'Maximum of 2 admin accounts allowed' })
+    // Defense in depth: only allow self-registration as user or driver
+    if (role && !['user', 'driver'].includes(role)) {
+      return res
+        .status(403)
+        .json({ message: 'Cannot self-register with this role' });
     }
 
-    // Auto-approval logic
-    const adminCount = await User.countDocuments({ role: 'admin' })
-    const totalCount = await User.countDocuments()
-    const isFirstAdmin = finalRole === 'admin' && adminCount === 0
-    const autoApprove = isFirstAdmin || totalCount === 0
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({ message: 'Email already registered' });
+    }
 
-    const hashed = await bcrypt.hash(password, 12)
-    const user = await User.create({
+    // Generate verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(verificationToken)
+      .digest('hex');
+
+    const userData = {
+      name,
       email,
-      password: hashed,
-      displayName: displayName || email.split('@')[0],
-      role: finalRole,
-      status: autoApprove ? 'active' : 'pending',
-      assigned_hospitals: [],
-    })
+      password,
+      phone,
+      role,
+      verification_token: hashedToken,
+      verification_expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    };
+    if (role === 'driver' && vehicle_details) {
+      userData.vehicle_details = vehicle_details;
+    }
 
-    const clean = sanitizeUser(user)
-    const token = signToken(clean.id)
-    res.status(201).json({ token, user: clean })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+    const user = await User.create(userData);
+    const token = generateToken(user._id);
+    setCookie(res, token);
+
+    // Send verification email (non-blocking)
+    sendVerificationEmail(email, verificationToken).catch(() => {});
+
+    res.status(201).json({
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        assigned_hospitals: user.assigned_hospitals,
+        vehicle_details: user.vehicle_details,
+        is_online: user.is_online,
+        email_verified: user.email_verified,
+      },
+    });
+  })
+);
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body
-    const { User } = getModels()
+router.post(
+  '/login',
+  authLimiter,
+  validate(loginSchema),
+  asyncHandler(async (req, res) => {
+    const { email, password } = req.validatedBody;
 
-    const user = await User.findOne({ email }).lean()
-    if (!user) return res.status(401).json({ error: 'Invalid email or password' })
-
-    const valid = await bcrypt.compare(password, user.password)
-    if (!valid) return res.status(401).json({ error: 'Invalid email or password' })
-
-    if (user.status === 'pending') {
-      return res.status(403).json({ error: 'Your account is pending admin approval. Please wait.' })
+    const user = await User.findOne({ email }).select('+password');
+    if (!user || !(await user.comparePassword(password))) {
+      return res
+        .status(401)
+        .json({ message: 'Invalid email or password' });
     }
 
-    const clean = sanitizeUser(user)
-    const token = signToken(clean.id)
-    res.json({ token, user: clean })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+    if (!user.is_active) {
+      return res
+        .status(403)
+        .json({ message: 'Account has been deactivated' });
+    }
+
+    const token = generateToken(user._id);
+    setCookie(res, token);
+
+    res.json({
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        assigned_hospitals: user.assigned_hospitals,
+        vehicle_details: user.vehicle_details,
+        is_online: user.is_online,
+        email_verified: user.email_verified,
+      },
+    });
+  })
+);
+
+// POST /api/auth/logout
+router.post('/logout', (_req, res) => {
+  res.cookie('token', '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    expires: new Date(0),
+  });
+  res.json({ message: 'Logged out successfully' });
+});
 
 // GET /api/auth/me
-router.get('/me', authenticate, (req, res) => {
-  res.json({ user: req.user })
-})
+router.get('/me', auth, async (_req, res) => {
+  res.json({
+    user: {
+      _id: _req.user._id,
+      name: _req.user.name,
+      email: _req.user.email,
+      role: _req.user.role,
+      phone: _req.user.phone,
+      assigned_hospitals: _req.user.assigned_hospitals,
+      vehicle_details: _req.user.vehicle_details,
+      is_online: _req.user.is_online,
+      email_verified: _req.user.email_verified,
+    },
+  });
+});
 
-// PUT /api/auth/profile
-router.put('/profile', authenticate, async (req, res) => {
-  try {
-    const { displayName, phone, organization } = req.body
-    const { User } = getModels()
+// GET /api/auth/verify-email/:token
+router.get(
+  '/verify-email/:token',
+  asyncHandler(async (req, res) => {
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(req.params.token)
+      .digest('hex');
 
-    const updates = {}
-    if (displayName !== undefined) updates.displayName = displayName
-    if (phone !== undefined) updates.phone = phone
-    if (organization !== undefined) updates.organization = organization
+    const user = await User.findOne({
+      verification_token: hashedToken,
+      verification_expires: { $gt: Date.now() },
+    });
 
-    const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true })
-    res.json({ user: sanitizeUser(user) })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+    if (!user) {
+      return res
+        .status(400)
+        .json({ message: 'Invalid or expired verification link' });
+    }
 
-// PUT /api/auth/password
-router.put('/password', authenticate, async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body
-    const { User } = getModels()
+    user.email_verified = true;
+    user.verification_token = undefined;
+    user.verification_expires = undefined;
+    await user.save();
 
-    const user = await User.findById(req.user.id).select('password')
-    const valid = user && await bcrypt.compare(currentPassword, user.password)
-    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' })
-    if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' })
+    res.json({ message: 'Email verified successfully' });
+  })
+);
 
-    const hashed = await bcrypt.hash(newPassword, 12)
-    await User.findByIdAndUpdate(req.user.id, { password: hashed })
-    res.json({ message: 'Password changed successfully' })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+// POST /api/auth/resend-verification
+router.post(
+  '/resend-verification',
+  auth,
+  authLimiter,
+  asyncHandler(async (req, res) => {
+    if (req.user.email_verified) {
+      return res
+        .status(400)
+        .json({ message: 'Email already verified' });
+    }
 
-// DELETE /api/auth/account
-router.delete('/account', authenticate, async (req, res) => {
-  try {
-    const { password } = req.body
-    const { User } = getModels()
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(verificationToken)
+      .digest('hex');
 
-    const user = await User.findById(req.user.id).select('password')
-    const valid = user && await bcrypt.compare(password, user.password)
-    if (!valid) return res.status(401).json({ error: 'Incorrect password' })
+    req.user.verification_token = hashedToken;
+    req.user.verification_expires = new Date(
+      Date.now() + 24 * 60 * 60 * 1000
+    );
+    await req.user.save();
 
-    await User.findByIdAndDelete(req.user.id)
-    res.json({ message: 'Account deleted' })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+    await sendVerificationEmail(req.user.email, verificationToken);
 
-// GET /api/auth/admin-count
-router.get('/admin-count', async (req, res) => {
-  const { User } = getModels()
-  const count = await User.countDocuments({ role: 'admin' })
-  res.json({ count })
-})
+    res.json({ message: 'Verification email sent' });
+  })
+);
 
-export default router
+// POST /api/auth/forgot-password
+router.post(
+  '/forgot-password',
+  authLimiter,
+  asyncHandler(async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    // Always return success to prevent email enumeration
+    if (!user) {
+      return res.json({
+        message: 'If that email is registered, a reset link has been sent',
+      });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
+
+    user.reset_token = hashedToken;
+    user.reset_expires = new Date(Date.now() + 60 * 60 * 1000);
+    await user.save();
+
+    await sendPasswordResetEmail(email, resetToken);
+
+    res.json({
+      message: 'If that email is registered, a reset link has been sent',
+    });
+  })
+);
+
+// POST /api/auth/reset-password/:token
+router.post(
+  '/reset-password/:token',
+  asyncHandler(async (req, res) => {
+    const { password } = req.body;
+    if (!password || password.length < 6) {
+      return res
+        .status(400)
+        .json({ message: 'Password must be at least 6 characters' });
+    }
+
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(req.params.token)
+      .digest('hex');
+
+    const user = await User.findOne({
+      reset_token: hashedToken,
+      reset_expires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res
+        .status(400)
+        .json({ message: 'Invalid or expired reset link' });
+    }
+
+    user.password = password;
+    user.reset_token = undefined;
+    user.reset_expires = undefined;
+    await user.save();
+
+    res.json({ message: 'Password reset successfully' });
+  })
+);
+
+module.exports = router;

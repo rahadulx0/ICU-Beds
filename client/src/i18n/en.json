@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "ICU Beds",
+    "tagline": "Real-time ICU bed availability & emergency ambulance dispatch"
+  },
+  "nav": {
+    "map": "Map",
+    "dashboard": "Dashboard",
+    "history": "History",
+    "profile": "Profile",
+    "login": "Login",
+    "signup": "Sign Up",
+    "logout": "Logout",
+    "theme": "Theme"
+  },
+  "home": {
+    "hospitals": "Hospitals",
+    "available": "Available",
+    "totalBeds": "Total Beds",
+    "searchPlaceholder": "Search hospitals...",
+    "filter": "Filter",
+    "myLocation": "My Location",
+    "all": "All",
+    "availableFilter": "Available",
+    "noBeds": "No Beds",
+    "noHospitals": "No hospitals found",
+    "bedAvailability": "Bed Availability",
+    "legend": {
+      "available": "Available (>20%)",
+      "low": "Low (<=20%)",
+      "noBeds": "No beds"
+    }
+  },
+  "auth": {
+    "welcomeBack": "Welcome back",
+    "signInTo": "Sign in to your ICU Beds account",
+    "email": "Email",
+    "password": "Password",
+    "signIn": "Sign In",
+    "signingIn": "Signing in...",
+    "forgotPassword": "Forgot password?",
+    "noAccount": "Don't have an account?",
+    "createAccount": "Create an account",
+    "joinPlatform": "Join the ICU Beds emergency care platform",
+    "fullName": "Full Name",
+    "phone": "Phone",
+    "role": "Role",
+    "creatingAccount": "Creating account...",
+    "hasAccount": "Already have an account?",
+    "demoAccounts": "Demo Accounts"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "admin": "System administration and oversight",
+    "moderator": "Manage your assigned hospitals",
+    "hospitalRep": "Update bed availability for your hospital",
+    "driver": "Manage ambulance requests",
+    "user": "Your ambulance requests and activity"
+  },
+  "ambulance": {
+    "requestAmbulance": "Request Ambulance",
+    "pickupAddress": "Pickup Address",
+    "emergencyType": "Emergency Type",
+    "stable": "Stable",
+    "moderate": "Moderate",
+    "critical": "Critical",
+    "notes": "Additional Notes",
+    "sendRequest": "Send Request",
+    "cancelRequest": "Cancel Request",
+    "tracking": "Ambulance Tracking",
+    "findingDriver": "Finding Driver",
+    "driverAssigned": "Driver Assigned",
+    "enRoute": "En Route",
+    "onTheWay": "Ambulance is on the way..."
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "loading": "Loading...",
+    "noResults": "No results found",
+    "previous": "Previous",
+    "next": "Next"
+  }
+}
