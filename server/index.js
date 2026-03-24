@@ -31,12 +31,17 @@ const reviewRoutes = require('./routes/reviews');
 const app = express();
 const server = http.createServer(app);
 
+// Trust proxy for Render/Vercel (needed for secure cookies, rate limiting, correct IP)
+app.set('trust proxy', 1);
+
+// Support multiple origins via comma-separated CLIENT_URL
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+const allowedOrigins = CLIENT_URL.split(',').map((u) => u.trim());
 
 // Socket.io setup
 const io = new Server(server, {
   cors: {
-    origin: CLIENT_URL,
+    origin: allowedOrigins,
     credentials: true,
   },
 });
@@ -72,7 +77,7 @@ app.use(
 );
 app.use(
   cors({
-    origin: CLIENT_URL,
+    origin: allowedOrigins,
     credentials: true,
   })
 );
