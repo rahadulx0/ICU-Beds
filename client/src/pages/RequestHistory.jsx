@@ -26,9 +26,9 @@ export default function RequestHistory() {
   }, [dispatch, page, statusFilter]);
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Request History</h1>
+    <div className="mx-auto max-w-4xl px-4 py-4 sm:py-6 animate-in">
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <h1 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">Request History</h1>
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}

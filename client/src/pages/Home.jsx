@@ -512,8 +512,8 @@ export default function Home() {
 
       {/* Ambulance Request Modal */}
       {showRequestModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="request-modal-title">
-          <div className="w-full max-w-md rounded-t-2xl bg-white p-6 shadow-2xl dark:bg-gray-800 sm:rounded-2xl">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 modal-overlay p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="request-modal-title">
+          <div className="w-full max-w-md rounded-t-2xl bg-white p-5 sm:p-6 shadow-2xl dark:bg-gray-800 sm:rounded-2xl bottom-sheet sm:modal-content">
             <div className="flex items-center justify-between">
               <div>
                 <h3 id="request-modal-title" className="text-lg font-semibold text-gray-900 dark:text-white">{t('ambulance.requestAmbulance')}</h3>
@@ -607,8 +607,8 @@ export default function Home() {
 
       {/* Add Hospital Modal (Admin) */}
       {showAddHospitalModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="add-hospital-modal-title">
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-6 shadow-2xl dark:bg-gray-800 sm:rounded-2xl">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 modal-overlay p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="add-hospital-modal-title">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 sm:p-6 shadow-2xl dark:bg-gray-800 sm:rounded-2xl bottom-sheet sm:modal-content">
             <div className="flex items-center justify-between">
               <div>
                 <h3 id="add-hospital-modal-title" className="text-lg font-semibold text-gray-900 dark:text-white">Add Hospital</h3>

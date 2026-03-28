@@ -38,19 +38,19 @@ export default function ConfirmDialog({
   const Icon = v.icon;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
-        <div className="flex items-start gap-4">
-          <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${v.iconBg}`}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 modal-overlay p-0 sm:p-4">
+      <div className="w-full max-w-sm rounded-t-2xl sm:rounded-2xl bg-white p-5 sm:p-6 shadow-2xl dark:bg-gray-800 bottom-sheet sm:modal-content">
+        <div className="flex items-start gap-3">
+          <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${v.iconBg}`}>
             <Icon className={`h-5 w-5 ${v.iconColor}`} />
           </div>
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h3>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{message}</p>
           </div>
           <button
             onClick={onCancel}
-            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 active:scale-95 dark:hover:bg-gray-700"
           >
             <X className="h-4 w-4" />
           </button>

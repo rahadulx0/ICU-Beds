@@ -58,7 +58,7 @@ export default function HospitalDetail() {
       : 'text-emerald-600 dark:text-emerald-400';
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6">
+    <div className="mx-auto max-w-4xl px-4 py-4 sm:py-6 animate-in">
       <Link to="/" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
         <ArrowLeft className="h-4 w-4" />
         Back to Map

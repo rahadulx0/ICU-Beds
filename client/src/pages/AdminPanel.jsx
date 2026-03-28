@@ -224,7 +224,7 @@ export default function AdminPanel() {
   return (
     <div>
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 stagger-in">
         <StatsCard
           title="Total Hospitals"
           value={hospitals.length}
@@ -542,8 +542,8 @@ export default function AdminPanel() {
 
       {/* Assign Staff Modal */}
       {assigningHospital && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl max-h-[80vh] overflow-y-auto dark:bg-gray-800">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 modal-overlay p-0 sm:p-4">
+          <div className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl bg-white p-5 sm:p-6 shadow-2xl max-h-[85vh] overflow-y-auto dark:bg-gray-800 bottom-sheet sm:modal-content">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Assign Staff - {assigningHospital.name}
@@ -634,8 +634,8 @@ export default function AdminPanel() {
 
       {/* Create/Edit Hospital Modal */}
       {(showCreateModal || editingHospital) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 modal-overlay p-0 sm:p-4">
+          <div className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl bg-white p-5 sm:p-6 shadow-2xl dark:bg-gray-800 max-h-[90vh] overflow-y-auto bottom-sheet sm:modal-content">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {editingHospital ? 'Edit Hospital' : 'Add Hospital'}
@@ -678,7 +678,7 @@ export default function AdminPanel() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="label">Latitude</label>
                   <input
@@ -707,7 +707,7 @@ export default function AdminPanel() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">Total ICU Beds</label>
                   <input
@@ -736,7 +736,7 @@ export default function AdminPanel() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="label">Contact Phone</label>
                   <input

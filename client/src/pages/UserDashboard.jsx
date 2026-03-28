@@ -10,15 +10,14 @@ import {
   CheckCircle2,
   XCircle,
   MapPin,
-  Navigation,
-  AlertTriangle,
   Star,
+  Navigation,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 export default function UserDashboard() {
   const dispatch = useDispatch();
-  const { requests, activeRequest, loading, pagination } = useSelector(
+  const { requests, activeRequest, loading } = useSelector(
     (state) => state.ambulance
   );
   const [reviewingId, setReviewingId] = useState(null);
@@ -29,103 +28,104 @@ export default function UserDashboard() {
     dispatch(fetchRequests({}));
   }, [dispatch]);
 
-  const statusIcon = {
-    pending: <Clock className="h-4 w-4 text-amber-500" />,
-    accepted: <CheckCircle2 className="h-4 w-4 text-blue-500" />,
-    'en-route': <Truck className="h-4 w-4 text-primary-500" />,
-    completed: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
-    cancelled: <XCircle className="h-4 w-4 text-red-500" />,
-  };
-
-  const statusBadge = {
-    pending: 'badge-yellow',
-    accepted: 'badge-blue',
-    'en-route': 'badge-blue',
-    completed: 'badge-green',
-    cancelled: 'badge-red',
+  const statusConfig = {
+    pending: { icon: Clock, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/20', badge: 'badge-yellow' },
+    accepted: { icon: CheckCircle2, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20', badge: 'badge-blue' },
+    'en-route': { icon: Truck, color: 'text-primary-500', bg: 'bg-primary-50 dark:bg-primary-900/20', badge: 'badge-blue' },
+    completed: { icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20', badge: 'badge-green' },
+    cancelled: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-50 dark:bg-red-900/20', badge: 'badge-red' },
   };
 
   return (
-    <div>
+    <div className="animate-in">
       {/* Active request tracker */}
       {activeRequest && (
-        <div className="mb-6">
+        <div className="mb-5">
           <AmbulanceTracker />
         </div>
       )}
 
       {/* Request history */}
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Your Requests</h3>
+      <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">Your Requests</h3>
 
       {loading ? (
         <LoadingSpinner />
       ) : requests.length === 0 ? (
-        <div className="mt-4 rounded-xl border-2 border-dashed border-gray-200 py-16 text-center dark:border-gray-700">
-          <Truck className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" />
-          <h4 className="mt-3 text-base font-medium text-gray-900 dark:text-white">No requests yet</h4>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        <div className="mt-4 flex flex-col items-center rounded-2xl border-2 border-dashed border-gray-200 py-14 text-center dark:border-gray-700">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 dark:bg-gray-800">
+            <Navigation className="h-7 w-7 text-gray-400 dark:text-gray-500" />
+          </div>
+          <h4 className="mt-4 text-sm font-medium text-gray-900 dark:text-white">No requests yet</h4>
+          <p className="mt-1 max-w-xs text-xs text-gray-500 dark:text-gray-400">
             Your ambulance requests will appear here. Use the map to request one.
           </p>
         </div>
       ) : (
-        <div className="mt-4 space-y-3">
-          {requests.map((req) => (
-            <div key={req._id} className="card">
-              <div className="flex items-start justify-between">
+        <div className="mt-3 space-y-3 stagger-in">
+          {requests.map((req) => {
+            const status = statusConfig[req.status] || statusConfig.pending;
+            const StatusIcon = status.icon;
+            return (
+              <div key={req._id} className="card p-4">
                 <div className="flex items-start gap-3">
-                  {statusIcon[req.status]}
-                  <div>
-                    {req.hospital && (
-                      <p className="font-medium text-gray-900 dark:text-white">{req.hospital.name}</p>
-                    )}
-                    <p className="mt-0.5 flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
-                      <MapPin className="h-3.5 w-3.5" />
-                      {req.pickup_address}
-                    </p>
-                    {req.driver && (
-                      <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                        Driver: {req.driver.name}
-                      </p>
-                    )}
+                  <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${status.bg}`}>
+                    <StatusIcon className={`h-4 w-4 ${status.color}`} />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        {req.hospital && (
+                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{req.hospital.name}</p>
+                        )}
+                        <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 truncate">
+                          <MapPin className="h-3 w-3 flex-shrink-0" />
+                          {req.pickup_address}
+                        </p>
+                      </div>
+                      <div className="flex-shrink-0 text-right">
+                        <span className={status.badge}>{req.status}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between">
+                      <div className="flex items-center gap-3 text-xs text-gray-400">
+                        {req.driver && <span>Driver: {req.driver.name}</span>}
+                        <span>{formatDistanceToNow(new Date(req.createdAt), { addSuffix: true })}</span>
+                      </div>
+                      {req.status === 'completed' && !reviewedIds.has(req._id) && reviewingId !== req._id && (
+                        <button
+                          onClick={() => setReviewingId(req._id)}
+                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-50 active:scale-95 dark:text-amber-400 dark:hover:bg-amber-900/20"
+                        >
+                          <Star className="h-3 w-3" />
+                          Rate
+                        </button>
+                      )}
+                      {reviewedIds.has(req._id) && (
+                        <span className="text-xs text-emerald-600 dark:text-emerald-400">Reviewed</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="text-right">
-                  <span className={statusBadge[req.status]}>{req.status}</span>
-                  <p className="mt-1 text-xs text-gray-400">
-                    {formatDistanceToNow(new Date(req.createdAt), { addSuffix: true })}
-                  </p>
-                  {req.status === 'completed' && !reviewedIds.has(req._id) && reviewingId !== req._id && (
-                    <button
-                      onClick={() => setReviewingId(req._id)}
-                      className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
-                    >
-                      <Star className="h-3.5 w-3.5" />
-                      Rate Trip
-                    </button>
-                  )}
-                  {reviewedIds.has(req._id) && (
-                    <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">Reviewed</p>
-                  )}
-                </div>
+                {/* Inline Review Form */}
+                {reviewingId === req._id && (
+                  <div className="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700 animate-in">
+                    <ReviewForm
+                      hospitalId={req.hospital?._id}
+                      ambulanceRequestId={req._id}
+                      onSubmitted={() => {
+                        setReviewingId(null);
+                        setReviewedIds((prev) => new Set([...prev, req._id]));
+                      }}
+                      onCancel={() => setReviewingId(null)}
+                    />
+                  </div>
+                )}
               </div>
-
-              {/* Inline Review Form */}
-              {reviewingId === req._id && (
-                <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
-                  <ReviewForm
-                    hospitalId={req.hospital?._id}
-                    ambulanceRequestId={req._id}
-                    onSubmitted={() => {
-                      setReviewingId(null);
-                      setReviewedIds((prev) => new Set([...prev, req._id]));
-                    }}
-                    onCancel={() => setReviewingId(null)}
-                  />
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

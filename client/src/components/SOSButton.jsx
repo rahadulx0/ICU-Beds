@@ -82,18 +82,18 @@ export default function SOSButton() {
       <button
         onClick={handleSOS}
         disabled={loading}
-        className="fixed bottom-20 right-4 z-40 flex h-16 w-16 items-center justify-center rounded-full bg-red-600 text-white shadow-lg transition-transform hover:scale-105 active:scale-95 md:bottom-6 md:right-6"
+        className="fixed bottom-[4.5rem] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-red-600 text-white shadow-lg shadow-red-600/30 transition-transform duration-150 hover:scale-105 active:scale-95 md:bottom-6 md:right-6 md:h-16 md:w-16"
         aria-label="Emergency SOS"
       >
         {/* Pulsing ring */}
-        <span className="absolute inset-0 animate-ping rounded-full bg-red-400 opacity-30" />
+        <span className="absolute inset-0 animate-ping rounded-full bg-red-400 opacity-20" />
         <span className="relative flex flex-col items-center">
           {loading ? (
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
           ) : (
             <>
-              <Phone className="h-6 w-6" />
-              <span className="text-[10px] font-bold leading-tight">SOS</span>
+              <Phone className="h-5 w-5 md:h-6 md:w-6" />
+              <span className="text-[9px] font-bold leading-tight">SOS</span>
             </>
           )}
         </span>
