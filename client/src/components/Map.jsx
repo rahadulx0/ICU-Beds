@@ -103,11 +103,16 @@ function FitBounds({ hospitals }) {
   const map = useMap();
 
   useEffect(() => {
-    if (hospitals.length > 0) {
-      const bounds = L.latLngBounds(
-        hospitals.map((h) => [h.location.coordinates[1], h.location.coordinates[0]])
-      );
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+    try {
+      const valid = hospitals.filter((h) => h.location?.coordinates?.length === 2);
+      if (valid.length > 0) {
+        const bounds = L.latLngBounds(
+          valid.map((h) => [h.location.coordinates[1], h.location.coordinates[0]])
+        );
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+      }
+    } catch {
+      // Map may not be ready (e.g., hidden container)
     }
   }, [hospitals, map]);
 
@@ -117,8 +122,12 @@ function FitBounds({ hospitals }) {
 function FlyTo({ position }) {
   const map = useMap();
   useEffect(() => {
-    if (position) {
-      map.flyTo(position, 15, { duration: 1.5 });
+    try {
+      if (position) {
+        map.flyTo(position, 15, { duration: 1.5 });
+      }
+    } catch {
+      // Map may not be ready (e.g., hidden container)
     }
   }, [position, map]);
   return null;
@@ -128,14 +137,18 @@ function MapClickHandler({ active, onMapClick }) {
   const map = useMap();
 
   useEffect(() => {
-    if (active) {
-      map.getContainer().style.cursor = 'crosshair';
-    } else {
-      map.getContainer().style.cursor = '';
+    try {
+      if (active) {
+        map.getContainer().style.cursor = 'crosshair';
+      } else {
+        map.getContainer().style.cursor = '';
+      }
+      return () => {
+        try { map.getContainer().style.cursor = ''; } catch { /* noop */ }
+      };
+    } catch {
+      // Map container may not be accessible
     }
-    return () => {
-      map.getContainer().style.cursor = '';
-    };
   }, [active, map]);
 
   useMapEvents({
@@ -195,7 +208,7 @@ export default function Map({
   const defaultZoom = 12;
 
   const flyToPosition = useMemo(() => {
-    if (selectedHospital) {
+    if (selectedHospital?.location?.coordinates?.length === 2) {
       return [
         selectedHospital.location.coordinates[1],
         selectedHospital.location.coordinates[0],
@@ -235,7 +248,7 @@ export default function Map({
         {flyToPosition && <FlyTo position={flyToPosition} />}
 
         {/* Hospital markers */}
-        {hospitals.map((hospital) => (
+        {hospitals.filter((h) => h.location?.coordinates?.length === 2).map((hospital) => (
           <Marker
             key={hospital._id}
             position={[hospital.location.coordinates[1], hospital.location.coordinates[0]]}
