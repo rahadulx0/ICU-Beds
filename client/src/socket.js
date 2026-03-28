@@ -10,6 +10,10 @@ const socket = io(API_URL || '/', {
   reconnectionDelay: 1000,
   reconnectionDelayMax: 10000,
   timeout: 20000,
+  auth: () => {
+    const token = localStorage.getItem('token');
+    return token ? { token } : {};
+  },
 });
 
 export default socket;

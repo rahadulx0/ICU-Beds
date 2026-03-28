@@ -73,6 +73,7 @@ router.post(
     sendVerificationEmail(email, verificationToken).catch(() => {});
 
     res.status(201).json({
+      token,
       user: {
         _id: user._id,
         name: user.name,
@@ -113,6 +114,7 @@ router.post(
     setCookie(res, token);
 
     res.json({
+      token,
       user: {
         _id: user._id,
         name: user.name,

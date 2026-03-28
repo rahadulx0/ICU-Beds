@@ -3,7 +3,11 @@ const User = require('../models/User');
 
 const auth = async (req, res, next) => {
   try {
-    const token = req.cookies?.token;
+    // Check Authorization header first (for cross-origin), then fall back to cookie
+    const authHeader = req.headers.authorization;
+    const token = (authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.split(' ')[1]
+      : null) || req.cookies?.token;
 
     if (!token) {
       return res.status(401).json({ message: 'Authentication required' });

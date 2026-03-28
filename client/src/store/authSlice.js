@@ -4,6 +4,9 @@ import api from '../api/axios';
 export const login = createAsyncThunk('auth/login', async (credentials, { rejectWithValue }) => {
   try {
     const { data } = await api.post('/auth/login', credentials);
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+    }
     return data.user;
   } catch (error) {
     return rejectWithValue(error.response?.data?.message || 'Login failed');
@@ -13,6 +16,9 @@ export const login = createAsyncThunk('auth/login', async (credentials, { reject
 export const register = createAsyncThunk('auth/register', async (userData, { rejectWithValue }) => {
   try {
     const { data } = await api.post('/auth/register', userData);
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+    }
     return data.user;
   } catch (error) {
     return rejectWithValue(error.response?.data?.message || 'Registration failed');
@@ -20,6 +26,7 @@ export const register = createAsyncThunk('auth/register', async (userData, { rej
 });
 
 export const logout = createAsyncThunk('auth/logout', async () => {
+  localStorage.removeItem('token');
   await api.post('/auth/logout');
 });
 
