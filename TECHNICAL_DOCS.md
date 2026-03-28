@@ -30,6 +30,7 @@
 22. [Performance](#22-performance)
 23. [Database Seeding](#23-database-seeding)
 24. [Troubleshooting](#24-troubleshooting)
+25. [Mobile-First UI Patterns](#25-mobile-first-ui-patterns)
 
 ---
 
@@ -885,9 +886,11 @@ Query: `?page=1&limit=20&action=hospital.create&resource_type=hospital`
    - `secure: true` in production (HTTPS only)
    - `sameSite: 'none'` in production, `'lax'` in development
    - `maxAge: 7 days`
-3. **Subsequent requests** → The `auth` middleware extracts the JWT from `req.cookies.token`, verifies it, and loads the user from MongoDB (excluding password)
-4. **Client-side** → Axios sends `withCredentials: true` to include cookies automatically
-5. **401 handling** → Axios response interceptor redirects to `/login` on 401
+3. **Bearer Token (Cross-Origin)** → JWT is also returned in the JSON response body (`{ user, token }`) and stored in `localStorage` by the client. This is the **primary auth mechanism** in production since third-party cookies are blocked across different domains (e.g., Vercel frontend ↔ Render backend).
+4. **Subsequent requests** → The `auth` middleware checks `Authorization: Bearer <token>` header first, then falls back to `req.cookies.token`. The Axios request interceptor automatically attaches the Bearer header from localStorage.
+5. **Client-side** → Axios sends both `withCredentials: true` (for same-origin cookies) and `Authorization` header (for cross-origin). Socket.io passes the token via the `auth` callback.
+6. **401 handling** → Axios response interceptor clears the token from localStorage and redirects to `/login` on 401
+7. **Logout** → Clears localStorage token, calls `/api/auth/logout` (which clears the cookie), and resets Redux auth state
 
 ### Role-Based Access Control (RBAC)
 
@@ -1162,14 +1165,32 @@ The Vite build config splits dependencies into named chunks:
 
 ```javascript
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: '/api',              // proxied in dev, full URL in production
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 });
+
+// Request interceptor: attach Bearer token from localStorage
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// Response interceptor: clear token and redirect on 401
+api.interceptors.response.use(
+  (res) => res,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
 ```
 
-- `withCredentials: true` ensures cookies are sent with every request
-- Response interceptor redirects to `/login` on any 401 response
+- **Dual auth**: Cookies for same-origin, Bearer token for cross-origin (Vercel ↔ Render)
 - In development, Vite proxies `/api` and `/socket.io` to `http://localhost:5000`
 
 ---
@@ -1306,7 +1327,7 @@ configureStore({
 | Component | Description |
 |---|---|
 | **Layout** | App shell. Provides `DarkModeContext`. Renders `Navbar` + main content area. Includes skip-to-content accessibility link. |
-| **Navbar** | Desktop top nav + mobile bottom tab bar. Role-based menu items. Theme toggle, language toggle, NotificationBell. |
+| **Navbar** | Desktop top nav (h-14) + mobile bottom tab bar with glassmorphic backdrop-blur. Role-based menu items. Language toggle, NotificationBell. Mobile bottom nav: Home/Dashboard/History/Profile (logged in) or Home/Login/Signup (logged out). Dark mode toggle moved to Profile Settings. |
 | **ProtectedRoute** | Wrapper that checks `user` in Redux. Optionally validates `roles` array. Redirects to `/login` if unauthenticated. |
 | **ErrorBoundary** | React error boundary. Catches rendering errors and displays fallback UI. |
 
@@ -1316,8 +1337,8 @@ configureStore({
 |---|---|---|
 | **LoadingSpinner** | `fullScreen?: boolean` | Centered spinning animation. Full viewport when `fullScreen` is true. |
 | **StatsCard** | `title, value, icon, trend?` | Dashboard card with title, large value, icon, optional trend indicator. |
-| **ConfirmDialog** | `isOpen, title, message, confirmText, cancelText, variant, onConfirm, onCancel, loading` | Modal dialog with danger/warning/info variants. |
-| **HospitalCard** | `hospital, compact?, onSelect?, onRequestAmbulance?` | Hospital list item with name, beds, status badge, action buttons. |
+| **ConfirmDialog** | `isOpen, title, message, confirmText, cancelText, variant, onConfirm, onCancel, loading` | Modal dialog with danger/warning/info variants. Renders as bottom-sheet on mobile, centered modal on desktop. |
+| **HospitalCard** | `hospital, compact?, onSelect?, onRequestAmbulance?` | Hospital list item. Compact mode shows color-coded bed count badge, name, and address as a tappable row. Full mode shows bed utilization bar, contact info, and action buttons. |
 | **NotificationBell** | - | Icon button with unread count badge. Opens dropdown showing latest notifications. |
 
 ### Feature Components
@@ -1329,7 +1350,7 @@ configureStore({
 | **BedHistoryChart** | Recharts area chart showing bed availability trends. Period selector (24h/7d/30d/90d). |
 | **ReviewForm** | Star rating (1-5, hover effect) + comment textarea. Submits review for a completed trip. |
 | **ReviewList** | Fetches and displays paginated reviews for a hospital. Shows average rating and review count. |
-| **SOSButton** | Floating emergency button (bottom-right). Gets GPS, finds nearest hospital with beds, creates critical ambulance request after confirmation. Pulsing red animation. |
+| **SOSButton** | Floating emergency button (bottom-right, offset above mobile bottom nav at `bottom-[4.5rem]`). Gets GPS, finds nearest hospital with beds, creates critical ambulance request after confirmation. Pulsing red animation. h-14 on mobile, h-16 on desktop. |
 
 ---
 
@@ -1339,13 +1360,13 @@ configureStore({
 
 | Page | Route | Description |
 |---|---|---|
-| **Home** | `/` | Main view. Split layout: hospital list sidebar + interactive map. Search, filters, ambulance request modal. Admin can add hospitals by right-clicking the map. |
+| **Home** | `/` | **Desktop**: Split layout — hospital list sidebar (400px) + interactive map. Clicking a hospital card flies the map and opens a detail panel on the right side of the map (360px slide-in panel with bed stats, contact, directions, request ambulance). **Mobile**: Toggle between full-screen hospital list and full-screen map via floating "View Map" button. Clicking a hospital card opens a bottom-sheet popup with the same detail panel content. Stats cards, search, filters, ambulance request modal. Admin can click the + button on the map to add hospitals. |
 | **Login** | `/login` | Email/password form with inline validation (email format, password length). ARIA accessibility attributes. |
 | **Signup** | `/signup` | Registration form with user/driver toggle. Driver fields (plate number, vehicle type) shown conditionally. Inline validation. |
 | **ForgotPassword** | `/forgot-password` | Email input to request password reset. |
 | **ResetPassword** | `/reset-password/:token` | New password form using reset token from email. |
 | **VerifyEmail** | `/verify-email/:token` | Calls verification endpoint on mount. Shows success/error. |
-| **HospitalDetail** | `/hospitals/:id` | Full hospital info: map, bed utilization bar, bed history chart, contact info, assigned staff, reviews. |
+| **HospitalDetail** | `/hospitals/:id` | Full hospital info: map (with coordinate validation), bed utilization bar, bed history chart, contact info, assigned staff, reviews. Mobile: "Get Directions" button (Google Maps link), back button hidden (phone's hardware/swipe back handles navigation). Desktop: back button uses `navigate(-1)`. Responsive typography and padding. |
 | **NotFound** | `*` | 404 page with link back to home. |
 
 ### Protected Pages (any authenticated user)
@@ -1353,8 +1374,8 @@ configureStore({
 | Page | Route | Description |
 |---|---|---|
 | **Dashboard** | `/dashboard` | Role-based dashboard router. Renders AdminPanel, ModeratorDashboard, HospitalManage, DriverDashboard, or UserDashboard depending on `user.role`. |
-| **Profile** | `/profile` | Edit name, email, phone. Change password form. |
-| **RequestHistory** | `/history` | Full ambulance request history with status filters and pagination. |
+| **Profile** | `/profile` | Edit name, email, phone. Settings section with dark mode toggle (switch), language selector, collapsible password change accordion, and logout button (red). |
+| **RequestHistory** | `/history` | Full ambulance request history with status filters and pagination. Mobile-optimized compact cards: status icon + badges + relative time in top row, details indented below, timeline with arrow separators. Bottom padding for mobile nav. |
 
 ### Role-Specific Pages
 
@@ -1438,6 +1459,7 @@ module.exports = { darkMode: 'class', ... }
 1. `useDarkMode()` hook reads initial state from `localStorage('theme')` or system preference
 2. `Layout.jsx` creates `DarkModeContext` and adds/removes `dark` class on `<html>`
 3. All components use `dark:` Tailwind variants: `bg-white dark:bg-gray-900`
+4. **Toggle location**: The dark mode toggle is in the **Profile** page Settings section (rendered as a toggle switch), not in the Navbar. This keeps the Navbar clean and treats dark mode as a user preference/setting.
 
 ### Dark Mode Map Fix
 
@@ -1470,23 +1492,39 @@ Hospitals are rendered as circular markers with colors based on bed availability
 | `available_icu_beds > 0 && <= 20%` | Amber (yellow) | Low |
 | `available_icu_beds === 0` | Red | No Beds |
 
-Each marker has a popup showing:
+Each marker has a Leaflet popup showing:
 - Hospital name and address
-- Bed count: "X / Y ICU Beds"
-- "View Details" link to `/hospitals/:id`
+- Bed count: "X / Y ICU Beds" with BedBadge (Available/Low/No Beds)
 - "Request Ambulance" button (for user role)
+
+### Hospital Detail Panel
+
+Clicking a hospital (either from the list or a map marker) opens a **detail panel** on top of the map:
+
+- **Desktop**: A 360px slide-in panel on the right side of the map (`animate-slide-in-right`). Shows hospital name, address, bed availability with progress bar, phone contact, "Get Directions" (Google Maps), "Request Ambulance" button, and "View Full Details →" link to `/hospitals/:id`.
+- **Mobile**: A bottom-sheet popup (`bottom-sheet` animation) with the same content. Includes a drag handle. Background overlay dismisses the panel on tap.
+
+The panel is rendered in `Home.jsx` and uses the `selected` hospital from Redux state. Both the sidebar card click and map marker click trigger `dispatch(setSelected(h))` to open the panel.
+
+### Map Safety
+
+The `HospitalDetail` page guards the Map component with coordinate validation:
+```jsx
+{hospital.location?.coordinates?.length === 2 && <Map hospitals={[hospital]} />}
+```
+This prevents rendering crashes when hospital data lacks valid coordinates.
 
 ### User Location
 
-When the user clicks "My Location", the browser's Geolocation API is used. The user's position appears as a blue pulsing dot.
+When the user clicks "My Location", the browser's Geolocation API is used. The user's position appears as a blue pulsing dot with a surrounding circle.
 
 ### Admin: Add Hospital
 
-Admin users can right-click the map to add a hospital. The coordinates are captured, reverse-geocoded via Nominatim API to pre-fill the name and address, and a modal form is shown.
+Admin users see a + button on the map. Clicking it enters "add mode" (crosshair cursor). Clicking the map captures coordinates, reverse-geocodes via Nominatim API to pre-fill name and address, and opens a modal form (bottom-sheet on mobile).
 
 ### Map Viewport
 
-Default center: Dhaka, Bangladesh `[23.777, 90.399]`, zoom level 12.
+Default center: Dhaka, Bangladesh `[23.7461, 90.3742]`, zoom level 12. When hospitals are loaded, `FitBounds` adjusts the viewport to show all markers. When a hospital is selected, `FlyTo` animates the camera to that location (zoom 15, 1.5s duration).
 
 ---
 
@@ -1834,6 +1872,92 @@ Ensure the server is running on port 5000 before starting the client dev server.
 ### Dark mode map looks wrong
 
 The CSS filter approach requires `.leaflet-tile-pane` to exist in the DOM. If the map renders before the filter is applied, force a re-render by toggling dark mode off and on.
+
+---
+
+## 25. Mobile-First UI Patterns
+
+### Responsive Layout Strategy
+
+The app uses a **mobile-first** approach with Tailwind responsive breakpoints. Key layout decisions:
+
+| Screen | Navbar | Home Page | Modals | Back Navigation |
+|---|---|---|---|---|
+| **Mobile** (`< lg`) | Bottom tab bar (h-14, glassmorphic `backdrop-blur-xl`) | Full-screen list/map toggle | Bottom-sheet (slide-up from bottom) | Phone's hardware/swipe back |
+| **Desktop** (`>= lg`) | Top nav bar (h-14) | Sidebar (400px) + map side-by-side | Centered modal with scale-in animation | Explicit back button |
+
+**Height calculations**: All full-height pages use `h-[calc(100vh-56px-56px)]` on mobile (top nav + bottom nav) and `h-[calc(100vh-56px)]` on desktop (top nav only). The bottom nav is 56px (`h-14`).
+
+### CSS Animations
+
+Defined in `tailwind.config.js` keyframes and applied via utility classes in `index.css`:
+
+| Animation | Class | Usage |
+|---|---|---|
+| `slide-up` | `.animate-in` | Page entrance, staggered children (`.stagger-in`) |
+| `fade-in` | `.modal-overlay` | Modal/bottom-sheet backdrop |
+| `scale-in` | `.modal-content` | Desktop modal entrance |
+| `slide-in-bottom` | `.bottom-sheet` | Mobile bottom-sheet entrance |
+| `slide-in-right` | `.animate-slide-in-right` | Desktop hospital detail panel |
+| `slide-down` | `animate-slide-down` | Dropdown menus |
+
+**Staggered animations**: The `.stagger-in` class applies `slide-up` with increasing delays (0ms, 50ms, 100ms, ...) to child elements for a cascading entrance effect.
+
+### Bottom-Sheet Pattern
+
+Mobile modals use the bottom-sheet pattern for thumb-friendly interaction:
+
+```jsx
+{/* Overlay */}
+<div className="fixed inset-0 z-50" onClick={onClose}>
+  <div className="absolute inset-0 bg-black/40 modal-overlay" />
+  <div
+    className="absolute bottom-0 w-full max-h-[80vh] overflow-y-auto rounded-t-2xl bg-white px-5 pb-8 pt-3 shadow-2xl dark:bg-gray-800 bottom-sheet"
+    onClick={(e) => e.stopPropagation()}
+  >
+    {/* Drag handle */}
+    <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-gray-300 dark:bg-gray-600" />
+    {/* Content */}
+  </div>
+</div>
+```
+
+Used in: Hospital detail popup, ConfirmDialog, ambulance request modal, add hospital modal (admin).
+
+### Hospital Detail Popup
+
+The hospital detail popup is the primary interaction for viewing hospital information:
+
+- **Mobile**: Triggered by tapping a hospital card in the list. Opens a bottom-sheet with: hospital name, address, ICU bed availability (count + progress bar + utilization %), phone contact (tappable), "Directions" button (Google Maps), "Request Ambulance" button, and "View Full Details →" link.
+- **Desktop**: Triggered by clicking a hospital card in the sidebar or a map marker. Opens a 360px slide-in panel on the right side of the map with the same content.
+- Both panels are dismissed by clicking the X button, clicking the overlay (mobile), or selecting a different hospital.
+
+### Touch Targets
+
+All interactive elements on mobile have a minimum height of 44px (`min-h-[44px]`) per Apple's Human Interface Guidelines. Buttons use `active:scale-[0.97]` for tactile press feedback.
+
+### Component Responsive Patterns
+
+Common responsive patterns used throughout:
+
+```
+Text:     text-xs sm:text-sm, text-lg sm:text-2xl
+Padding:  p-3 sm:p-4, !p-4 sm:!p-6
+Spacing:  mt-4 sm:mt-6, space-y-2 sm:space-y-3
+Icons:    h-4 w-4 sm:h-5 sm:w-5
+Height:   h-48 sm:h-64 (map previews)
+Display:  hidden sm:inline-flex (desktop-only back buttons)
+          sm:hidden (mobile-only elements like "Get Directions")
+```
+
+### Deployment Notes (Cross-Origin)
+
+When the frontend (Vercel) and backend (Render) are on different domains:
+- Third-party cookies are blocked by modern browsers
+- Authentication uses `Authorization: Bearer <token>` header via localStorage
+- The Axios request interceptor attaches the token automatically
+- Socket.io passes the token via the `auth` callback
+- Both cookie and Bearer token paths remain for same-origin fallback
 
 ---
 

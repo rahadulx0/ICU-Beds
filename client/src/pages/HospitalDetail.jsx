@@ -62,7 +62,7 @@ export default function HospitalDetail() {
     <div className="mx-auto max-w-4xl px-4 py-3 sm:py-6 pb-20 sm:pb-6 animate-in">
       <button
         onClick={() => navigate(-1)}
-        className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 min-h-[44px]"
+        className="mb-4 hidden items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:inline-flex"
       >
         <ArrowLeft className="h-4 w-4" />
         Back

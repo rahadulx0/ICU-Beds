@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { fetchHospitals, setSelected, setFilter, createHospital } from '../store/hospitalSlice';
 import { createRequest } from '../store/ambulanceSlice';
-import Map from '../components/Map';
+import Map, { BedBadge } from '../components/Map';
 import HospitalCard from '../components/HospitalCard';
 import AmbulanceTracker from '../components/AmbulanceTracker';
 import SOSButton from '../components/SOSButton';
@@ -21,6 +21,9 @@ import {
   List,
   X,
   Building2,
+  Bed,
+  Phone,
+  Navigation,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -196,9 +199,9 @@ export default function Home() {
     }
   };
 
-  // When a hospital is selected on mobile list, navigate to detail page
+  // When a hospital is selected on mobile list, show detail popup
   const handleMobileHospitalSelect = (hospital) => {
-    navigate(`/hospitals/${hospital._id}`);
+    dispatch(setSelected(hospital));
   };
 
   return (
@@ -367,6 +370,104 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* Hospital Detail - Mobile Bottom Sheet */}
+        {selected && (
+          <div className="fixed inset-0 z-50" onClick={() => dispatch(setSelected(null))}>
+            <div className="absolute inset-0 bg-black/40 modal-overlay" />
+            <div
+              className="absolute bottom-0 w-full max-h-[80vh] overflow-y-auto rounded-t-2xl bg-white px-5 pb-8 pt-3 shadow-2xl dark:bg-gray-800 bottom-sheet"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Drag handle */}
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-gray-300 dark:bg-gray-600" />
+
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">{selected.name}</h3>
+                  <p className="mt-1 flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                    <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="truncate">{selected.address}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => dispatch(setSelected(null))}
+                  className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 active:scale-95 dark:hover:bg-gray-700"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Bed Availability */}
+              <div className="mt-4 rounded-xl bg-gray-50 p-3.5 dark:bg-gray-700/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Bed className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">ICU Beds</span>
+                  </div>
+                  <BedBadge available={selected.available_icu_beds} total={selected.total_icu_beds} />
+                </div>
+                <div className="mt-2.5 flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{selected.available_icu_beds}</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">/ {selected.total_icu_beds} available</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-600">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      selected.available_icu_beds === 0 ? 'bg-red-500'
+                        : selected.available_icu_beds / selected.total_icu_beds <= 0.2 ? 'bg-amber-500'
+                        : 'bg-emerald-500'
+                    }`}
+                    style={{ width: `${selected.total_icu_beds > 0 ? Math.round(((selected.total_icu_beds - selected.available_icu_beds) / selected.total_icu_beds) * 100) : 0}%` }}
+                  />
+                </div>
+                <p className="mt-1.5 text-right text-xs text-gray-500 dark:text-gray-400">
+                  {selected.total_icu_beds > 0 ? Math.round(((selected.total_icu_beds - selected.available_icu_beds) / selected.total_icu_beds) * 100) : 0}% utilized
+                </p>
+              </div>
+
+              {/* Contact */}
+              {selected.contact?.phone && (
+                <a href={`tel:${selected.contact.phone}`} className="mt-3 flex items-center gap-2 rounded-lg p-2 text-sm text-primary-600 hover:bg-gray-50 dark:text-primary-400 dark:hover:bg-gray-700/50 min-h-[44px]">
+                  <Phone className="h-4 w-4" />
+                  {selected.contact.phone}
+                </a>
+              )}
+
+              {/* Actions */}
+              <div className="mt-4 flex gap-2">
+                {selected.location?.coordinates?.length === 2 && (
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${selected.location.coordinates[1]},${selected.location.coordinates[0]}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-secondary flex-1 text-sm"
+                  >
+                    <Navigation className="h-4 w-4" />
+                    Directions
+                  </a>
+                )}
+                {user?.role === 'user' && (
+                  <button
+                    onClick={() => { handleRequestAmbulance(selected); dispatch(setSelected(null)); }}
+                    className="btn-primary flex-1 text-sm"
+                  >
+                    Request Ambulance
+                  </button>
+                )}
+              </div>
+
+              {/* View Full Details */}
+              <button
+                onClick={() => { navigate(`/hospitals/${selected._id}`); dispatch(setSelected(null)); }}
+                className="mt-3 w-full rounded-xl py-2.5 text-center text-sm font-medium text-primary-600 transition-all hover:bg-primary-50 active:scale-[0.97] dark:text-primary-400 dark:hover:bg-primary-900/20"
+              >
+                View Full Details &rarr;
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ===== DESKTOP VIEW ===== */}
@@ -487,6 +588,97 @@ export default function Home() {
           onAddHospital={isAdmin ? handleAddHospitalClick : undefined}
           className="h-full"
         />
+
+        {/* Hospital Detail - Desktop Right Panel */}
+        {selected && (
+          <div className="absolute right-0 top-0 z-[1000] flex h-full w-[360px] flex-col border-l border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800 animate-slide-in-right">
+            <div className="flex-1 overflow-y-auto p-5">
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">{selected.name}</h3>
+                  <p className="mt-1 flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                    <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="truncate">{selected.address}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => dispatch(setSelected(null))}
+                  className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 active:scale-95 dark:hover:bg-gray-700"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Bed Availability */}
+              <div className="mt-5 rounded-xl bg-gray-50 p-4 dark:bg-gray-700/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Bed className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">ICU Beds</span>
+                  </div>
+                  <BedBadge available={selected.available_icu_beds} total={selected.total_icu_beds} />
+                </div>
+                <div className="mt-3 flex items-baseline gap-1">
+                  <span className="text-3xl font-bold text-gray-900 dark:text-white">{selected.available_icu_beds}</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">/ {selected.total_icu_beds} available</span>
+                </div>
+                <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-600">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      selected.available_icu_beds === 0 ? 'bg-red-500'
+                        : selected.available_icu_beds / selected.total_icu_beds <= 0.2 ? 'bg-amber-500'
+                        : 'bg-emerald-500'
+                    }`}
+                    style={{ width: `${selected.total_icu_beds > 0 ? Math.round(((selected.total_icu_beds - selected.available_icu_beds) / selected.total_icu_beds) * 100) : 0}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
+                  {selected.total_icu_beds > 0 ? Math.round(((selected.total_icu_beds - selected.available_icu_beds) / selected.total_icu_beds) * 100) : 0}% utilized
+                </p>
+              </div>
+
+              {/* Contact */}
+              {selected.contact?.phone && (
+                <a href={`tel:${selected.contact.phone}`} className="mt-4 flex items-center gap-2 rounded-lg p-2.5 text-sm text-primary-600 hover:bg-gray-50 dark:text-primary-400 dark:hover:bg-gray-700/50">
+                  <Phone className="h-4 w-4" />
+                  {selected.contact.phone}
+                </a>
+              )}
+
+              {/* Actions */}
+              <div className="mt-5 space-y-2">
+                {selected.location?.coordinates?.length === 2 && (
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${selected.location.coordinates[1]},${selected.location.coordinates[0]}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-secondary w-full text-sm"
+                  >
+                    <Navigation className="h-4 w-4" />
+                    Get Directions
+                  </a>
+                )}
+                {user?.role === 'user' && (
+                  <button
+                    onClick={() => { handleRequestAmbulance(selected); dispatch(setSelected(null)); }}
+                    className="btn-primary w-full text-sm"
+                  >
+                    Request Ambulance
+                  </button>
+                )}
+              </div>
+
+              {/* View Full Details */}
+              <button
+                onClick={() => { navigate(`/hospitals/${selected._id}`); dispatch(setSelected(null)); }}
+                className="mt-4 w-full rounded-xl py-2.5 text-center text-sm font-medium text-primary-600 transition-all hover:bg-primary-50 active:scale-[0.97] dark:text-primary-400 dark:hover:bg-primary-900/20"
+              >
+                View Full Details &rarr;
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Legend */}
         <div className="absolute bottom-4 left-4 rounded-xl border border-gray-200 bg-white/90 p-3 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/90">
