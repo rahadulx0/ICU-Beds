@@ -3,7 +3,7 @@ import { MapPin, ArrowLeft } from 'lucide-react';
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-[calc(100vh-64px)] items-center justify-center px-4">
+    <div className="flex min-h-[calc(100vh-56px)] items-center justify-center px-4">
       <div className="text-center">
         <p className="text-7xl font-bold text-primary-600 dark:text-primary-400">404</p>
         <h1 className="mt-4 text-2xl font-bold text-gray-900 dark:text-white">Page not found</h1>

@@ -10,13 +10,16 @@ import SOSButton from '../components/SOSButton';
 import LoadingSpinner from '../components/LoadingSpinner';
 import {
   Search,
-  Bed,
   Filter,
   Locate,
   ChevronDown,
   Hospital,
   AlertCircle,
   MapPin,
+  Map as MapIcon,
+  List,
+  X,
+  Building2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -29,6 +32,7 @@ export default function Home() {
   const [search, setSearch] = useState('');
   const [userLocation, setUserLocation] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [mobileView, setMobileView] = useState('list'); // 'list' | 'map'
   const [showRequestModal, setShowRequestModal] = useState(null);
   const [requestForm, setRequestForm] = useState({
     pickup_address: '',
@@ -190,10 +194,183 @@ export default function Home() {
     }
   };
 
+  // When a hospital is selected on mobile list, switch to map view
+  const handleMobileHospitalSelect = (hospital) => {
+    dispatch(setSelected(hospital));
+    setMobileView('map');
+  };
+
   return (
-    <div className="flex h-[calc(100vh-64px-56px)] flex-col md:h-[calc(100vh-64px)] lg:flex-row">
+    <div className="flex h-[calc(100vh-56px-56px)] flex-col md:h-[calc(100vh-56px)] lg:flex-row">
+      {/* ===== MOBILE VIEW ===== */}
+      <div className="flex h-full flex-col lg:hidden">
+        {/* Mobile: List View */}
+        {mobileView === 'list' && (
+          <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-900">
+            {/* Stats Cards */}
+            <div className="border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl bg-blue-50 p-3 text-center dark:bg-blue-900/20">
+                  <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{hospitals.length}</p>
+                  <p className="text-[10px] font-medium text-blue-600/70 dark:text-blue-400/70">{t('home.hospitals')}</p>
+                </div>
+                <div className="rounded-xl bg-emerald-50 p-3 text-center dark:bg-emerald-900/20">
+                  <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{availableBeds}</p>
+                  <p className="text-[10px] font-medium text-emerald-600/70 dark:text-emerald-400/70">{t('home.available')}</p>
+                </div>
+                <div className="rounded-xl bg-gray-100 p-3 text-center dark:bg-gray-800">
+                  <p className="text-xl font-bold text-gray-700 dark:text-gray-300">{totalBeds}</p>
+                  <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400">{t('home.totalBeds')}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Search & Filters */}
+            <div className="border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder={t('home.searchPlaceholder')}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="input pl-10 text-sm"
+                />
+              </div>
+
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className="btn-secondary py-1.5 text-xs"
+                >
+                  <Filter className="h-3.5 w-3.5" />
+                  {t('home.filter')}
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 transition-transform ${showFilters ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                <button onClick={getUserLocation} className="btn-secondary py-1.5 text-xs">
+                  <Locate className="h-3.5 w-3.5" />
+                  {t('home.myLocation')}
+                </button>
+              </div>
+
+              {showFilters && (
+                <div className="mt-2 flex gap-1.5">
+                  {[
+                    { key: 'all', label: t('home.all') },
+                    { key: 'available', label: t('home.availableFilter') },
+                    { key: 'critical', label: t('home.noBeds') },
+                  ].map((f) => (
+                    <button
+                      key={f.key}
+                      onClick={() => dispatch(setFilter(f.key))}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                        filter === f.key
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Ambulance Tracker */}
+            {user && activeRequest && (
+              <div className="border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
+                <AmbulanceTracker />
+              </div>
+            )}
+
+            {/* Hospital List - Full height */}
+            <div className="flex-1 overflow-y-auto px-4 py-3">
+              {loading ? (
+                <LoadingSpinner />
+              ) : filteredHospitals.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 dark:bg-gray-800">
+                    <Building2 className="h-8 w-8 text-gray-400 dark:text-gray-500" />
+                  </div>
+                  <p className="mt-4 text-sm font-medium text-gray-500 dark:text-gray-400">{t('home.noHospitals')}</p>
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">Try adjusting your search or filters</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredHospitals.map((hospital) => (
+                    <HospitalCard
+                      key={hospital._id}
+                      hospital={hospital}
+                      compact
+                      onSelect={handleMobileHospitalSelect}
+                      onRequestAmbulance={user?.role === 'user' ? handleRequestAmbulance : undefined}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Floating Map Button */}
+            <button
+              onClick={() => setMobileView('map')}
+              className="fixed bottom-20 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full bg-primary-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-primary-600/30 transition-all active:scale-95 dark:shadow-primary-900/50"
+            >
+              <MapIcon className="h-4 w-4" />
+              View Map
+            </button>
+          </div>
+        )}
+
+        {/* Mobile: Map View */}
+        {mobileView === 'map' && (
+          <div className="relative h-full">
+            <Map
+              hospitals={filteredHospitals}
+              selectedHospital={selected}
+              userLocation={userLocation}
+              showUser={!!userLocation}
+              onHospitalClick={(h) => dispatch(setSelected(h))}
+              onRequestAmbulance={user?.role === 'user' ? handleRequestAmbulance : undefined}
+              onAddHospital={isAdmin ? handleAddHospitalClick : undefined}
+              className="h-full"
+            />
+
+            {/* Back to list button */}
+            <button
+              onClick={() => { setMobileView('list'); dispatch(setSelected(null)); }}
+              className="absolute left-3 top-3 z-[1000] flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-lg transition-all active:scale-95 dark:bg-gray-800 dark:text-gray-200"
+            >
+              <List className="h-4 w-4" />
+              Hospitals
+            </button>
+
+            {/* Legend */}
+            <div className="absolute bottom-2 left-2 z-[1000] rounded-xl border border-gray-200 bg-white/90 p-2.5 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/90">
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Beds</p>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="h-2.5 w-2.5 rounded-full border-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30" />
+                  <span className="text-[10px] text-gray-600 dark:text-gray-400">{t('home.legend.available')}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-2.5 w-2.5 rounded-full border-2 border-amber-500 bg-amber-50 dark:bg-amber-900/30" />
+                  <span className="text-[10px] text-gray-600 dark:text-gray-400">{t('home.legend.low')}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-2.5 w-2.5 rounded-full border-2 border-red-500 bg-red-50 dark:bg-red-900/30" />
+                  <span className="text-[10px] text-gray-600 dark:text-gray-400">{t('home.legend.noBeds')}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ===== DESKTOP VIEW ===== */}
       {/* Sidebar */}
-      <div className="flex max-h-[40vh] w-full flex-col border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 lg:max-h-none lg:w-[400px]">
+      <div className="hidden w-[400px] flex-col border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 lg:flex">
         {/* Stats strip */}
         <div className="grid grid-cols-3 gap-px border-b border-gray-200 bg-gray-200 dark:border-gray-700 dark:bg-gray-700">
           <div className="bg-white p-3 text-center dark:bg-gray-900">
@@ -275,9 +452,11 @@ export default function Home() {
           {loading ? (
             <LoadingSpinner />
           ) : filteredHospitals.length === 0 ? (
-            <div className="py-12 text-center">
-              <Hospital className="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600" />
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('home.noHospitals')}</p>
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 dark:bg-gray-800">
+                <Building2 className="h-7 w-7 text-gray-400 dark:text-gray-500" />
+              </div>
+              <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">{t('home.noHospitals')}</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -295,8 +474,8 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Map */}
-      <div className="relative min-h-[50vh] flex-1 lg:min-h-0">
+      {/* Desktop Map */}
+      <div className="relative hidden min-h-0 flex-1 lg:block">
         <Map
           hospitals={filteredHospitals}
           selectedHospital={selected}
@@ -309,7 +488,7 @@ export default function Home() {
         />
 
         {/* Legend */}
-        <div className="absolute bottom-2 left-2 rounded-xl border border-gray-200 bg-white/90 p-2 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/90 lg:bottom-4 lg:left-4 lg:p-3">
+        <div className="absolute bottom-4 left-4 rounded-xl border border-gray-200 bg-white/90 p-3 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/90">
           <p className="mb-2 text-xs font-semibold text-gray-700 dark:text-gray-300">{t('home.bedAvailability')}</p>
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
@@ -333,14 +512,24 @@ export default function Home() {
 
       {/* Ambulance Request Modal */}
       {showRequestModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="request-modal-title">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
-            <h3 id="request-modal-title" className="text-lg font-semibold text-gray-900 dark:text-white">{t('ambulance.requestAmbulance')}</h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              To: {showRequestModal.name}
-            </p>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="request-modal-title">
+          <div className="w-full max-w-md rounded-t-2xl bg-white p-6 shadow-2xl dark:bg-gray-800 sm:rounded-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 id="request-modal-title" className="text-lg font-semibold text-gray-900 dark:text-white">{t('ambulance.requestAmbulance')}</h3>
+                <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+                  To: {showRequestModal.name}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRequestModal(null)}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-            <form onSubmit={submitRequest} className="mt-4 space-y-4">
+            <form onSubmit={submitRequest} className="mt-5 space-y-4">
               <div>
                 <label className="label">{t('ambulance.pickupAddress')}</label>
                 <input
@@ -418,15 +607,25 @@ export default function Home() {
 
       {/* Add Hospital Modal (Admin) */}
       {showAddHospitalModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="add-hospital-modal-title">
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
-            <h3 id="add-hospital-modal-title" className="text-lg font-semibold text-gray-900 dark:text-white">Add Hospital</h3>
-            <p className="mt-1 flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
-              <MapPin className="h-3.5 w-3.5" />
-              {showAddHospitalModal.lat.toFixed(5)}, {showAddHospitalModal.lng.toFixed(5)}
-            </p>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="add-hospital-modal-title">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-6 shadow-2xl dark:bg-gray-800 sm:rounded-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 id="add-hospital-modal-title" className="text-lg font-semibold text-gray-900 dark:text-white">Add Hospital</h3>
+                <p className="mt-0.5 flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
+                  <MapPin className="h-3.5 w-3.5" />
+                  {showAddHospitalModal.lat.toFixed(5)}, {showAddHospitalModal.lng.toFixed(5)}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAddHospitalModal(null)}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-            <form onSubmit={submitAddHospital} className="mt-4 space-y-4">
+            <form onSubmit={submitAddHospital} className="mt-5 space-y-4">
               <div>
                 <label className="label">Hospital Name</label>
                 <div className="relative">

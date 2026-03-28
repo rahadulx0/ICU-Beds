@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useContext } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
+import { useTranslation } from 'react-i18next';
 import { updateProfile, changePassword } from '../store/authSlice';
+import { DarkModeContext } from '../components/Layout';
 import {
   User,
   Mail,
@@ -12,12 +14,18 @@ import {
   Lock,
   Eye,
   EyeOff,
+  Moon,
+  Sun,
+  Languages,
+  Settings,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function Profile() {
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
+  const { dark, setDark } = useContext(DarkModeContext);
+  const { t, i18n } = useTranslation();
 
   const [form, setForm] = useState({
     name: user?.name || '',
@@ -229,6 +237,56 @@ export default function Profile() {
             {changingPassword ? 'Changing...' : 'Change Password'}
           </button>
         </form>
+      </div>
+
+      {/* Settings */}
+      <div className="mt-8">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
+          <Settings className="h-5 w-5" />
+          Settings
+        </h2>
+        <div className="mt-4 card divide-y divide-gray-100 dark:divide-gray-700 p-0">
+          {/* Dark Mode */}
+          <div className="flex items-center justify-between p-4">
+            <div className="flex items-center gap-3">
+              {dark ? <Moon className="h-5 w-5 text-indigo-500" /> : <Sun className="h-5 w-5 text-amber-500" />}
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">Appearance</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{dark ? 'Dark mode' : 'Light mode'}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setDark(!dark)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                dark ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+              aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              <span
+                className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                  dark ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Language */}
+          <div className="flex items-center justify-between p-4">
+            <div className="flex items-center gap-3">
+              <Languages className="h-5 w-5 text-blue-500" />
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">Language</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{i18n.language === 'bn' ? 'Bengali' : 'English'}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => i18n.changeLanguage(i18n.language === 'bn' ? 'en' : 'bn')}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              {i18n.language === 'bn' ? 'English' : 'Bengali'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

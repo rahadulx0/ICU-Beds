@@ -20,7 +20,7 @@ export default function VerifyEmail() {
   }, [token]);
 
   return (
-    <div className="flex min-h-[calc(100vh-64px)] items-center justify-center px-4 py-12">
+    <div className="flex min-h-[calc(100vh-56px)] items-center justify-center px-4 py-12">
       <div className="w-full max-w-md text-center">
         {status === 'loading' && (
           <>

@@ -8,15 +8,23 @@ export default function HospitalCard({ hospital, onSelect, onRequestAmbulance, c
     return (
       <button
         onClick={() => onSelect?.(hospital)}
-        className="flex w-full items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left transition-all hover:border-primary-300 hover:shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:hover:border-primary-600"
+        className="flex w-full items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left transition-all hover:border-primary-200 hover:shadow-sm active:scale-[0.99] dark:border-gray-700/80 dark:bg-gray-800 dark:hover:border-primary-700"
       >
-        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary-50 dark:bg-primary-900/30">
-          <Bed className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+        <div
+          className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-sm font-bold ${
+            available_icu_beds === 0
+              ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'
+              : available_icu_beds / total_icu_beds <= 0.2
+                ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400'
+                : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'
+          }`}
+        >
+          {available_icu_beds}
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{hospital.name}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {available_icu_beds} / {total_icu_beds} beds
+          <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+            {hospital.address || `${available_icu_beds} / ${total_icu_beds} beds`}
           </p>
         </div>
         <BedBadge available={available_icu_beds} total={total_icu_beds} />
@@ -45,7 +53,7 @@ export default function HospitalCard({ hospital, onSelect, onRequestAmbulance, c
 
         {/* Bed availability bar */}
         <div className="flex-1">
-          <div className="h-2.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
             <div
               className={`h-full rounded-full transition-all ${
                 available_icu_beds === 0

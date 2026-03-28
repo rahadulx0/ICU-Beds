@@ -13,7 +13,8 @@
       "Bash(taskkill /F /FI \"WINDOWTITLE eq node*\")",
       "Bash(timeout 8 node -e \":*)",
       "Bash(node -e \":*)",
-      "Bash(grep -E \"\\\\.\\(js|jsx\\)$\")"
+      "Bash(grep -E \"\\\\.\\(js|jsx\\)$\")",
+      "Bash(grep -E \".jsx$\")"
     ]
   }
 }
