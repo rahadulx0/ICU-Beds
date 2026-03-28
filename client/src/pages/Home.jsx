@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { fetchHospitals, setSelected, setFilter, createHospital } from '../store/hospitalSlice';
 import { createRequest } from '../store/ambulanceSlice';
@@ -26,6 +27,7 @@ import toast from 'react-hot-toast';
 export default function Home() {
   const { t } = useTranslation();
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { list: hospitals, loading, selected, filter } = useSelector((state) => state.hospitals);
   const { user } = useSelector((state) => state.auth);
   const { activeRequest } = useSelector((state) => state.ambulance);
@@ -194,10 +196,9 @@ export default function Home() {
     }
   };
 
-  // When a hospital is selected on mobile list, switch to map view
+  // When a hospital is selected on mobile list, navigate to detail page
   const handleMobileHospitalSelect = (hospital) => {
-    dispatch(setSelected(hospital));
-    setMobileView('map');
+    navigate(`/hospitals/${hospital._id}`);
   };
 
   return (

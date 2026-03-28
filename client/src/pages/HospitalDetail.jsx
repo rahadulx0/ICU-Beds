@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import Map from '../components/Map';
 import BedHistoryChart from '../components/BedHistoryChart';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ReviewList from '../components/ReviewList';
-import { MapPin, Phone, Mail, Bed, Users, ArrowLeft } from 'lucide-react';
+import { MapPin, Phone, Mail, Bed, Users, ArrowLeft, Navigation } from 'lucide-react';
 
 export default function HospitalDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [hospital, setHospital] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -30,7 +31,7 @@ export default function HospitalDetail() {
     return (
       <div className="py-20 text-center">
         <p className="text-gray-500 dark:text-gray-400">Hospital not found</p>
-        <Link to="/" className="btn-primary mt-4 inline-flex">Back to Map</Link>
+        <button onClick={() => navigate('/')} className="btn-primary mt-4 inline-flex">Back to Home</button>
       </div>
     );
   }
@@ -58,50 +59,68 @@ export default function HospitalDetail() {
       : 'text-emerald-600 dark:text-emerald-400';
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-4 sm:py-6 animate-in">
-      <Link to="/" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+    <div className="mx-auto max-w-4xl px-4 py-3 sm:py-6 pb-20 sm:pb-6 animate-in">
+      <button
+        onClick={() => navigate(-1)}
+        className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 min-h-[44px]"
+      >
         <ArrowLeft className="h-4 w-4" />
-        Back to Map
-      </Link>
+        Back
+      </button>
 
-      <div className="card">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{hospital.name}</h1>
-            <p className="mt-1 flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
-              <MapPin className="h-4 w-4" />
-              {hospital.address}
+      <div className="card !p-4 sm:!p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white">{hospital.name}</h1>
+            <p className="mt-1 flex items-center gap-1 text-xs sm:text-sm text-gray-500 dark:text-gray-400">
+              <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+              <span className="truncate">{hospital.address}</span>
             </p>
           </div>
-          <span className={`badge badge-${statusColor}`}>
+          <span className={`badge badge-${statusColor} flex-shrink-0`}>
             {hospital.status || 'active'}
           </span>
         </div>
 
         {/* Map */}
-        <Map
-          hospitals={[hospital]}
-          className="mt-4 h-64 rounded-xl overflow-hidden"
-        />
+        {hospital.location?.coordinates?.length === 2 && (
+          <Map
+            hospitals={[hospital]}
+            className="mt-4 h-48 sm:h-64 rounded-xl overflow-hidden"
+          />
+        )}
+
+        {/* Directions button (mobile-friendly) */}
+        {hospital.location?.coordinates?.length === 2 && (
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${hospital.location.coordinates[1]},${hospital.location.coordinates[0]}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 btn-primary w-full inline-flex items-center justify-center gap-2 text-sm sm:hidden"
+          >
+            <Navigation className="h-4 w-4" />
+            Get Directions
+          </a>
+        )}
 
         {/* Bed Availability */}
-        <div className="mt-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <Bed className="h-5 w-5" />
+        <div className="mt-4 sm:mt-6">
+          <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <Bed className="h-4 w-4 sm:h-5 sm:w-5" />
             ICU Bed Availability
           </h2>
-          <div className="mt-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+          <div className="mt-2 sm:mt-3 rounded-xl border border-gray-200 p-3 sm:p-4 dark:border-gray-700">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-3xl font-bold text-gray-900 dark:text-white">{hospital.available_icu_beds}</span>
-                <span className="text-lg text-gray-500 dark:text-gray-400"> / {hospital.total_icu_beds}</span>
+                <span className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">{hospital.available_icu_beds}</span>
+                <span className="text-base sm:text-lg text-gray-500 dark:text-gray-400"> / {hospital.total_icu_beds}</span>
               </div>
               <div className="text-right">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Utilization</p>
-                <p className={`text-2xl font-bold ${textColor}`}>{utilizationPercent}%</p>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Utilization</p>
+                <p className={`text-xl sm:text-2xl font-bold ${textColor}`}>{utilizationPercent}%</p>
               </div>
             </div>
-            <div className="mt-3 h-3 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+            <div className="mt-2 sm:mt-3 h-2.5 sm:h-3 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
               <div
                 className={`h-full rounded-full ${barColor} transition-all`}
                 style={{ width: `${utilizationPercent}%` }}
