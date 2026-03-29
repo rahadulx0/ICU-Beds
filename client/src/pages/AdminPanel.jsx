@@ -357,7 +357,6 @@ export default function AdminPanel() {
                 onHospitalClick={(h) => startEdit(h)}
                 onAddHospital={handleMapAddHospital}
                 showSearch
-                showPOI
                 className="h-[500px]"
               />
               <div className="flex items-center gap-2 border-t border-gray-200 bg-gray-50 px-4 py-2.5 dark:border-gray-700 dark:bg-gray-800">
