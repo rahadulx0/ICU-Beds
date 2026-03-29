@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import { useTranslation } from 'react-i18next';
-import { Phone, Bed, MapPin, Navigation, Plus, Search, X, Loader2 } from 'lucide-react';
+import { Phone, Bed, MapPin, Navigation, Plus, Search, X, Loader2, Hospital } from 'lucide-react';
 
 // Fix default leaflet icon issue
 delete L.Icon.Default.prototype._getIconUrl;
@@ -193,7 +193,7 @@ function POITags() {
 
   const fetchPOIs = useCallback(async () => {
     const zoom = map.getZoom();
-    if (zoom < 14) {
+    if (zoom < 12) {
       setPois([]);
       return;
     }
@@ -282,17 +282,34 @@ function MapSearch() {
   const containerRef = useRef(null);
 
   const search = useCallback(async (q) => {
-    if (!q || q.length < 3) {
+    if (!q || q.length < 2) {
       setResults([]);
       return;
     }
     setSearching(true);
     try {
+      // Search for hospitals in Bangladesh only
+      const hasHospitalKeyword =
+        q.toLowerCase().includes('hospital') || q.includes('হাসপাতাল');
+      const searchQuery = hasHospitalKeyword ? q : `${q} hospital`;
+
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1&accept-language=${lang}`
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&countrycodes=bd&limit=8&addressdetails=1&accept-language=${lang}`
       );
       const data = await res.json();
-      setResults(data);
+
+      // Prioritize hospital/clinic/medical results
+      const scored = data.map((item) => {
+        const isHospital =
+          item.type === 'hospital' ||
+          item.type === 'clinic' ||
+          item.type === 'doctors' ||
+          /hospital|হাসপাতাল|clinic|ক্লিনিক|medical|মেডিকেল/i.test(item.display_name);
+        return { ...item, _isHospital: isHospital };
+      });
+      scored.sort((a, b) => (b._isHospital ? 1 : 0) - (a._isHospital ? 1 : 0));
+
+      setResults(scored);
       setOpen(true);
     } catch {
       setResults([]);
@@ -342,7 +359,7 @@ function MapSearch() {
           value={query}
           onChange={handleChange}
           onFocus={() => results.length > 0 && setOpen(true)}
-          placeholder={lang === 'bn' ? 'মানচিত্রে অবস্থান খুঁজুন...' : 'Search location on map...'}
+          placeholder={lang === 'bn' ? 'বাংলাদেশে হাসপাতাল খুঁজুন...' : 'Search hospitals in BD...'}
           className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-9 text-sm shadow-lg placeholder:text-gray-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-primary-500 dark:focus:ring-primary-900/30"
         />
         {searching && (
@@ -366,8 +383,19 @@ function MapSearch() {
               onClick={() => handleSelect(item)}
               className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
-              <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary-500" />
-              <span className="text-gray-700 dark:text-gray-200 line-clamp-2">{item.display_name}</span>
+              {item._isHospital ? (
+                <Hospital className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" />
+              ) : (
+                <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
+              )}
+              <div className="min-w-0">
+                <span className={`line-clamp-1 ${item._isHospital ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
+                  {item.display_name.split(',')[0]}
+                </span>
+                <span className="line-clamp-1 text-xs text-gray-400 dark:text-gray-500">
+                  {item.display_name.split(',').slice(1, 3).join(',')}
+                </span>
+              </div>
             </button>
           ))}
         </div>
