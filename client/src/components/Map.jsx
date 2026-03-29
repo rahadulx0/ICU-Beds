@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from 'react-leaflet';
 import L from 'leaflet';
+import { useTranslation } from 'react-i18next';
 import { Phone, Bed, MapPin, Navigation, Plus, Search, X, Loader2 } from 'lucide-react';
 
 // Fix default leaflet icon issue
@@ -162,8 +163,117 @@ function MapClickHandler({ active, onMapClick }) {
   return null;
 }
 
+// --- POI Tags (hospitals, pharmacies, mosques from OpenStreetMap) ---
+
+const poiConfig = {
+  hospital: { color: '#dc2626', bg: '#fef2f2', border: '#fca5a5', icon: '<svg width="10" height="10" viewBox="0 0 10 10"><rect x="4" y="1" width="2" height="8" rx="0.5" fill="#dc2626"/><rect x="1" y="4" width="8" height="2" rx="0.5" fill="#dc2626"/></svg>' },
+  pharmacy: { color: '#059669', bg: '#ecfdf5', border: '#6ee7b7', icon: '<svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="3" width="8" height="4" rx="2" fill="#059669"/><rect x="4" y="0.5" width="2" height="3" rx="0.5" fill="#059669"/></svg>' },
+  mosque: { color: '#0891b2', bg: '#ecfeff', border: '#67e8f9', icon: '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M5 1C3 1 1.5 3 1.5 5a3.5 3.5 0 005.5 2.87A4 4 0 015 1z" fill="#0891b2"/><circle cx="7" cy="2.5" r="1" fill="#0891b2"/></svg>' },
+};
+
+const createPOITagIcon = (type, name) => {
+  const cfg = poiConfig[type] || poiConfig.hospital;
+  const display = name.length > 18 ? name.substring(0, 16) + '\u2026' : name;
+
+  return L.divIcon({
+    className: 'poi-tag-marker',
+    html: `<div style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px 2px 4px;background:${cfg.bg};border:1px solid ${cfg.border};border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.1);font-size:10px;font-family:Inter,system-ui,sans-serif;white-space:nowrap;color:${cfg.color};font-weight:600;line-height:14px;pointer-events:none;"><span style="display:flex;align-items:center;justify-content:center;width:14px;height:14px;flex-shrink:0;">${cfg.icon}</span><span>${display}</span></div>`,
+    iconSize: [0, 0],
+    iconAnchor: [0, 8],
+  });
+};
+
+function POITags() {
+  const map = useMap();
+  const { i18n } = useTranslation();
+  const lang = i18n.language;
+  const [pois, setPois] = useState([]);
+  const timerRef = useRef(null);
+  const abortRef = useRef(null);
+
+  const fetchPOIs = useCallback(async () => {
+    const zoom = map.getZoom();
+    if (zoom < 14) {
+      setPois([]);
+      return;
+    }
+
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const b = map.getBounds();
+    const bbox = `${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()}`;
+    const query = `[out:json][timeout:10];(node["amenity"="hospital"](${bbox});way["amenity"="hospital"](${bbox});node["amenity"="pharmacy"](${bbox});way["amenity"="pharmacy"](${bbox});node["amenity"="place_of_worship"]["religion"="muslim"](${bbox});way["amenity"="place_of_worship"]["religion"="muslim"](${bbox}););out center;`;
+
+    try {
+      const res = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        body: `data=${encodeURIComponent(query)}`,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        signal: controller.signal,
+      });
+      const data = await res.json();
+
+      const nameKey = lang === 'bn' ? 'name:bn' : 'name:en';
+      const results = (data.elements || [])
+        .map((el) => {
+          const lat = el.lat || el.center?.lat;
+          const lon = el.lon || el.center?.lon;
+          const name = el.tags?.[nameKey] || el.tags?.name;
+          if (!lat || !lon || !name) return null;
+
+          let type = 'hospital';
+          if (el.tags.amenity === 'pharmacy') type = 'pharmacy';
+          else if (el.tags.amenity === 'place_of_worship') type = 'mosque';
+
+          return { id: el.id, lat, lon, name, type };
+        })
+        .filter(Boolean)
+        .slice(0, 120);
+
+      setPois(results);
+    } catch (err) {
+      if (err.name !== 'AbortError') setPois([]);
+    }
+  }, [map, lang]);
+
+  useMapEvents({
+    moveend: () => {
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(fetchPOIs, 800);
+    },
+  });
+
+  useEffect(() => {
+    fetchPOIs();
+    return () => {
+      clearTimeout(timerRef.current);
+      if (abortRef.current) abortRef.current.abort();
+    };
+  }, [fetchPOIs]);
+
+  return (
+    <>
+      {pois.map((poi) => (
+        <Marker
+          key={`poi-${poi.type}-${poi.id}`}
+          position={[poi.lat, poi.lon]}
+          icon={createPOITagIcon(poi.type, poi.name)}
+          zIndexOffset={-1000}
+          interactive={false}
+        />
+      ))}
+    </>
+  );
+}
+
+// --- Map Search ---
+
 function MapSearch() {
   const map = useMap();
+  const { i18n } = useTranslation();
+  const lang = i18n.language;
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -179,7 +289,7 @@ function MapSearch() {
     setSearching(true);
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1`
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1&accept-language=${lang}`
       );
       const data = await res.json();
       setResults(data);
@@ -188,7 +298,7 @@ function MapSearch() {
       setResults([]);
     }
     setSearching(false);
-  }, []);
+  }, [lang]);
 
   const handleChange = (e) => {
     const val = e.target.value;
@@ -232,7 +342,7 @@ function MapSearch() {
           value={query}
           onChange={handleChange}
           onFocus={() => results.length > 0 && setOpen(true)}
-          placeholder="Search location on map..."
+          placeholder={lang === 'bn' ? 'মানচিত্রে অবস্থান খুঁজুন...' : 'Search location on map...'}
           className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-9 text-sm shadow-lg placeholder:text-gray-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-primary-500 dark:focus:ring-primary-900/30"
         />
         {searching && (
@@ -303,8 +413,11 @@ export default function Map({
   onAddHospital,
   showUser = false,
   showSearch = false,
+  showPOI = false,
   className = '',
 }) {
+  const { i18n } = useTranslation();
+  const lang = i18n.language;
   const mapRef = useRef(null);
   const [addMode, setAddMode] = useState(false);
   const [pinPosition, setPinPosition] = useState(null);
@@ -343,11 +456,17 @@ export default function Map({
         zoomControl={false}
       >
         <TileLayer
+          key={lang}
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          url={
+            lang === 'bn'
+              ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+              : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+          }
         />
 
         {showSearch && <MapSearch />}
+        {showPOI && <POITags />}
         <MapClickHandler active={addMode} onMapClick={handleMapClick} />
 
         {hospitals.length > 0 && !selectedHospital && <FitBounds hospitals={hospitals} />}
@@ -443,6 +562,25 @@ export default function Map({
           </>
         )}
       </MapContainer>
+
+      {/* POI legend */}
+      {showPOI && (
+        <div className="absolute bottom-3 left-3 z-[1000] flex gap-2 rounded-lg bg-white/90 px-3 py-1.5 shadow-md backdrop-blur-sm dark:bg-gray-800/90">
+          {[
+            { label: lang === 'bn' ? 'হাসপাতাল' : 'Hospital', color: '#dc2626' },
+            { label: lang === 'bn' ? 'ফার্মেসি' : 'Pharmacy', color: '#059669' },
+            { label: lang === 'bn' ? 'মসজিদ' : 'Mosque', color: '#0891b2' },
+          ].map((item) => (
+            <span key={item.color} className="flex items-center gap-1 text-[10px] font-medium text-gray-600 dark:text-gray-300">
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ background: item.color }}
+              />
+              {item.label}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Admin add hospital button */}
       {onAddHospital && (
