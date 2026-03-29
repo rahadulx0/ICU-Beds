@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from 'react-leaflet';
 import L from 'leaflet';
-import { Phone, Bed, MapPin, Navigation, Plus } from 'lucide-react';
+import { Phone, Bed, MapPin, Navigation, Plus, Search, X, Loader2 } from 'lucide-react';
 
 // Fix default leaflet icon issue
 delete L.Icon.Default.prototype._getIconUrl;
@@ -162,6 +162,110 @@ function MapClickHandler({ active, onMapClick }) {
   return null;
 }
 
+function MapSearch() {
+  const map = useMap();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+  const debounceRef = useRef(null);
+  const containerRef = useRef(null);
+
+  const search = useCallback(async (q) => {
+    if (!q || q.length < 3) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1`
+      );
+      const data = await res.json();
+      setResults(data);
+      setOpen(true);
+    } catch {
+      setResults([]);
+    }
+    setSearching(false);
+  }, []);
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    setQuery(val);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => search(val), 400);
+  };
+
+  const handleSelect = (item) => {
+    const lat = parseFloat(item.lat);
+    const lng = parseFloat(item.lon);
+    map.flyTo([lat, lng], 16, { duration: 1.5 });
+    setQuery(item.display_name.split(',').slice(0, 2).join(','));
+    setOpen(false);
+    setResults([]);
+  };
+
+  const handleClear = () => {
+    setQuery('');
+    setResults([]);
+    setOpen(false);
+  };
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="absolute left-3 top-3 z-[1000] w-72 sm:w-80">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          value={query}
+          onChange={handleChange}
+          onFocus={() => results.length > 0 && setOpen(true)}
+          placeholder="Search location on map..."
+          className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-9 text-sm shadow-lg placeholder:text-gray-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-primary-500 dark:focus:ring-primary-900/30"
+        />
+        {searching && (
+          <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-gray-400" />
+        )}
+        {!searching && query && (
+          <button
+            onClick={handleClear}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {open && results.length > 0 && (
+        <div className="mt-1 max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
+          {results.map((item, i) => (
+            <button
+              key={item.place_id || i}
+              onClick={() => handleSelect(item)}
+              className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary-500" />
+              <span className="text-gray-700 dark:text-gray-200 line-clamp-2">{item.display_name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const createAddPinIcon = () => {
   return L.divIcon({
     className: 'custom-marker',
@@ -198,6 +302,7 @@ export default function Map({
   onRequestAmbulance,
   onAddHospital,
   showUser = false,
+  showSearch = false,
   className = '',
 }) {
   const mapRef = useRef(null);
@@ -242,6 +347,7 @@ export default function Map({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
+        {showSearch && <MapSearch />}
         <MapClickHandler active={addMode} onMapClick={handleMapClick} />
 
         {hospitals.length > 0 && !selectedHospital && <FitBounds hospitals={hospitals} />}
@@ -361,7 +467,7 @@ export default function Map({
           </button>
 
           {addMode && (
-            <div className="absolute right-14 top-3 z-[1000] rounded-lg bg-black/75 px-3 py-2 text-xs font-medium text-white shadow-lg">
+            <div className="absolute right-14 top-3 z-[1000] max-w-[calc(100%-8rem)] rounded-lg bg-black/75 px-3 py-2 text-xs font-medium text-white shadow-lg sm:max-w-none">
               Click on the map to place hospital
             </div>
           )}

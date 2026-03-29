@@ -9,6 +9,7 @@ import {
 import api from '../api/axios';
 import StatsCard from '../components/StatsCard';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Map from '../components/Map';
 import {
   Hospital,
   Users,
@@ -24,6 +25,8 @@ import {
   UserPlus,
   UserMinus,
   Download,
+  Map as MapIcon,
+  List,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { exportCsv } from '../utils/exportCsv';
@@ -40,6 +43,7 @@ export default function AdminPanel() {
   const [assigningHospital, setAssigningHospital] = useState(null);
   const [assignedUsers, setAssignedUsers] = useState([]);
   const [assignLoading, setAssignLoading] = useState(false);
+  const [hospitalView, setHospitalView] = useState('list'); // 'list' | 'map'
   const [hospitalForm, setHospitalForm] = useState({
     name: '',
     address: '',
@@ -200,6 +204,19 @@ export default function AdminPanel() {
     });
   };
 
+  const handleMapAddHospital = (coords) => {
+    setHospitalForm({
+      name: '',
+      address: '',
+      latitude: coords.lat.toFixed(6),
+      longitude: coords.lng.toFixed(6),
+      total_icu_beds: '',
+      available_icu_beds: '',
+      contact: { phone: '', email: '' },
+    });
+    setShowCreateModal(true);
+  };
+
   const startEdit = (hospital) => {
     setEditingHospital(hospital);
     setHospitalForm({
@@ -280,6 +297,31 @@ export default function AdminPanel() {
           <div className="mb-4 flex items-center justify-between">
             <p className="text-sm text-gray-500 dark:text-gray-400">{hospitals.length} hospitals</p>
             <div className="flex gap-2">
+              {/* List / Map toggle */}
+              <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
+                <button
+                  onClick={() => setHospitalView('list')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    hospitalView === 'list'
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <List className="h-3.5 w-3.5" />
+                  List
+                </button>
+                <button
+                  onClick={() => setHospitalView('map')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                    hospitalView === 'map'
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <MapIcon className="h-3.5 w-3.5" />
+                  Map
+                </button>
+              </div>
               <button
                 onClick={() =>
                   exportCsv(
@@ -298,18 +340,37 @@ export default function AdminPanel() {
                 className="btn-secondary text-sm"
               >
                 <Download className="h-4 w-4" />
-                Export CSV
+                <span className="hidden sm:inline">Export CSV</span>
               </button>
               <button onClick={() => setShowCreateModal(true)} className="btn-primary text-sm">
                 <Plus className="h-4 w-4" />
-                Add Hospital
+                <span className="hidden sm:inline">Add Hospital</span>
               </button>
             </div>
           </div>
 
+          {/* Map View */}
+          {hospitalView === 'map' && (
+            <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+              <Map
+                hospitals={hospitals}
+                onHospitalClick={(h) => startEdit(h)}
+                onAddHospital={handleMapAddHospital}
+                showSearch
+                className="h-[500px]"
+              />
+              <div className="flex items-center gap-2 border-t border-gray-200 bg-gray-50 px-4 py-2.5 dark:border-gray-700 dark:bg-gray-800">
+                <MapIcon className="h-4 w-4 text-gray-400" />
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Search for a location, then click <span className="font-semibold text-primary-600 dark:text-primary-400">+</span> and click on the map to add a new hospital. Click a marker to edit.
+                </p>
+              </div>
+            </div>
+          )}
+
           {loading ? (
             <LoadingSpinner />
-          ) : (
+          ) : hospitalView === 'list' ? (
             <>
               {/* Desktop table */}
               <div className="hidden overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 md:block">
@@ -414,7 +475,7 @@ export default function AdminPanel() {
                 ))}
               </div>
             </>
-          )}
+          ) : null}
         </div>
       )}
 
