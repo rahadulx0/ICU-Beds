@@ -24,33 +24,31 @@ const createHospitalIcon = (available, total, name = '') => {
     color = '#059669';
   }
 
-  const shortName = name.length > 24 ? name.slice(0, 22) + '\u2026' : name;
-
   return L.divIcon({
     className: 'custom-marker',
     html: `
       <div style="
-        display:inline-flex;align-items:center;gap:4px;
-        background:rgba(255,255,255,0.93);
-        padding:3px 7px 3px 5px;
+        display:inline-flex;align-items:center;gap:5px;
+        background:rgba(255,255,255,0.95);
+        padding:4px 10px 4px 7px;
         border-radius:20px;
-        box-shadow:0 1px 4px rgba(0,0,0,0.16);
+        box-shadow:0 1px 5px rgba(0,0,0,0.18);
         white-space:nowrap;
       ">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-5h6v5M12 8v4M10 10h4"/>
         </svg>
         <span style="
           color:${color};
-          font-size:10.5px;font-weight:700;
+          font-size:13px;font-weight:700;
           font-family:Inter,system-ui,sans-serif;
           letter-spacing:0.01em;
-        ">${shortName}</span>
+        ">${name}</span>
       </div>
     `,
     iconSize: [1, 1],
     iconAnchor: [0, 0],
-    popupAnchor: [80, -14],
+    popupAnchor: [80, -16],
   });
 };
 
@@ -378,8 +376,10 @@ export default function Map({
         zoomControl={false}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          subdomains="abcd"
+          maxZoom={19}
         />
 
         {showSearch && <MapSearch />}
