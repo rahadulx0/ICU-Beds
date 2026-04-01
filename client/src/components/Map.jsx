@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import { useTranslation } from 'react-i18next';
 import { Phone, Bed, MapPin, Navigation, Plus, Search, X, Loader2, Hospital as HospitalIcon } from 'lucide-react';
@@ -12,49 +12,65 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
+// Google Maps-style pin marker with hospital name label
 const createHospitalIcon = (available, total, name = '') => {
   const ratio = total > 0 ? available / total : 0;
-  let color;
+  let pinColor, pinBorder, labelColor;
 
   if (available === 0) {
-    color = '#dc2626';
+    pinColor = '#EA4335';
+    pinBorder = '#B31412';
+    labelColor = '#C5221F';
   } else if (ratio <= 0.2) {
-    color = '#d97706';
+    pinColor = '#FBBC04';
+    pinBorder = '#E37400';
+    labelColor = '#E37400';
   } else {
-    color = '#059669';
+    pinColor = '#34A853';
+    pinBorder = '#1E8E3E';
+    labelColor = '#1E8E3E';
   }
 
   return L.divIcon({
-    className: 'custom-marker',
+    className: 'gmap-hospital-marker',
     html: `
-      <div style="
-        display:inline-flex;align-items:center;gap:5px;
-        background:rgba(255,255,255,0.95);
-        padding:4px 10px 4px 7px;
-        border-radius:20px;
-        box-shadow:0 1px 5px rgba(0,0,0,0.18);
-        white-space:nowrap;
-      ">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-5h6v5M12 8v4M10 10h4"/>
-        </svg>
-        <span style="
-          color:${color};
-          font-size:13px;font-weight:700;
-          font-family:Inter,system-ui,sans-serif;
+      <div style="display:flex;flex-direction:column;align-items:center;width:180px;">
+        <div style="
+          width:28px;height:28px;border-radius:50% 50% 50% 0;
+          background:${pinColor};border:2px solid ${pinBorder};
+          box-shadow:0 2px 6px rgba(0,0,0,0.3);
+          transform:rotate(-45deg);
+          display:flex;align-items:center;justify-content:center;
+        ">
+          <svg style="transform:rotate(45deg)" width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="none">
+            <rect x="10" y="4" width="4" height="16" rx="1"/>
+            <rect x="4" y="10" width="16" height="4" rx="1"/>
+          </svg>
+        </div>
+        <div style="
+          margin-top:4px;
+          color:${labelColor};
+          font-size:12px;font-weight:600;
+          font-family:'Google Sans',Roboto,Inter,system-ui,sans-serif;
+          white-space:nowrap;text-align:center;
+          text-shadow:
+            -1px -1px 0 #fff, 1px -1px 0 #fff,
+            -1px  1px 0 #fff, 1px  1px 0 #fff,
+             0   -1px 0 #fff, 0    1px 0 #fff,
+            -1px  0   0 #fff, 1px  0   0 #fff;
           letter-spacing:0.01em;
-        ">${name}</span>
+        ">${name}</div>
       </div>
     `,
-    iconSize: [1, 1],
-    iconAnchor: [0, 0],
-    popupAnchor: [80, -16],
+    iconSize: [180, 54],
+    iconAnchor: [90, 30],
+    popupAnchor: [0, -34],
   });
 };
 
 const createDriverIcon = () => {
   return L.divIcon({
-    className: 'custom-marker',
+    className: 'gmap-driver-marker',
     html: `
       <div style="
         display: flex;
@@ -63,9 +79,9 @@ const createDriverIcon = () => {
         width: 36px;
         height: 36px;
         border-radius: 50%;
-        background: #3b82f6;
-        border: 3px solid #1d4ed8;
-        box-shadow: 0 2px 8px rgba(59,130,246,0.4);
+        background: #4285F4;
+        border: 3px solid #1A73E8;
+        box-shadow: 0 2px 8px rgba(66,133,244,0.45);
         color: white;
       ">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -81,22 +97,22 @@ const createDriverIcon = () => {
 
 const createUserIcon = () => {
   return L.divIcon({
-    className: 'custom-marker',
+    className: 'gmap-user-marker',
     html: `
       <div style="
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 20px;
-        height: 20px;
+        width: 22px;
+        height: 22px;
         border-radius: 50%;
-        background: #6366f1;
+        background: #4285F4;
         border: 3px solid white;
-        box-shadow: 0 2px 8px rgba(99,102,241,0.4);
+        box-shadow: 0 0 0 2px #4285F4, 0 2px 8px rgba(66,133,244,0.4);
       "></div>
     `,
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
   });
 };
 
@@ -255,7 +271,7 @@ function MapSearch() {
           onChange={handleChange}
           onFocus={() => results.length > 0 && setOpen(true)}
           placeholder={lang === 'bn' ? 'বাংলাদেশে হাসপাতাল খুঁজুন...' : 'Search hospitals in BD...'}
-          className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-9 pr-9 text-sm shadow-lg placeholder:text-gray-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-primary-500 dark:focus:ring-primary-900/30"
+          className="w-full rounded-full border-0 bg-white py-2.5 pl-10 pr-10 text-sm shadow-[0_2px_6px_rgba(0,0,0,0.2)] placeholder:text-gray-400 focus:outline-none focus:shadow-[0_2px_8px_rgba(0,0,0,0.3)] dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500"
         />
         {searching && (
           <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-gray-400" />
@@ -263,7 +279,7 @@ function MapSearch() {
         {!searching && query && (
           <button
             onClick={handleClear}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
           >
             <X className="h-4 w-4" />
           </button>
@@ -271,12 +287,12 @@ function MapSearch() {
       </div>
 
       {open && results.length > 0 && (
-        <div className="mt-1 max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
+        <div className="mt-2 max-h-60 overflow-y-auto rounded-xl border-0 bg-white shadow-[0_4px_14px_rgba(0,0,0,0.15)] dark:bg-gray-800">
           {results.map((item, i) => (
             <button
               key={item.place_id || i}
               onClick={() => handleSelect(item)}
-              className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="flex w-full items-start gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
               {item._isHospital ? (
                 <HospitalIcon className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" />
@@ -301,7 +317,7 @@ function MapSearch() {
 
 const createAddPinIcon = () => {
   return L.divIcon({
-    className: 'custom-marker',
+    className: 'gmap-add-marker',
     html: `
       <div style="
         display: flex;
@@ -375,12 +391,15 @@ export default function Map({
         ref={mapRef}
         zoomControl={false}
       >
+        {/* Google Maps-style colorful tile layer */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
           subdomains="abcd"
-          maxZoom={19}
+          maxZoom={20}
         />
+
+        <ZoomControl position="bottomright" />
 
         {showSearch && <MapSearch />}
         <MapClickHandler active={addMode} onMapClick={handleMapClick} />
@@ -399,27 +418,27 @@ export default function Map({
             }}
           >
             <Popup>
-              <div className="p-3">
-                <h3 className="text-sm font-semibold text-gray-900">{hospital.name}</h3>
-                <p className="mt-1 flex items-center gap-1 text-xs text-gray-500">
-                  <MapPin className="h-3 w-3" />
+              <div className="min-w-[220px] p-1">
+                <h3 className="text-[15px] font-semibold text-gray-900">{hospital.name}</h3>
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-gray-500">
+                  <MapPin className="h-3 w-3 flex-shrink-0" />
                   {hospital.address}
                 </p>
 
                 <div className="mt-3 flex items-center gap-3">
                   <div className="flex items-center gap-1.5">
-                    <Bed className="h-4 w-4 text-primary-600" />
-                    <span className="text-sm font-semibold text-gray-900">
+                    <Bed className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm font-bold text-gray-900">
                       {hospital.available_icu_beds}
                     </span>
-                    <span className="text-xs text-gray-500">/ {hospital.total_icu_beds}</span>
+                    <span className="text-xs text-gray-400">/ {hospital.total_icu_beds}</span>
                   </div>
                   <BedBadge available={hospital.available_icu_beds} total={hospital.total_icu_beds} />
                 </div>
 
                 {hospital.contact?.phone && (
-                  <p className="mt-2 flex items-center gap-1 text-xs text-gray-500">
-                    <Phone className="h-3 w-3" />
+                  <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
+                    <Phone className="h-3 w-3 flex-shrink-0" />
                     {hospital.contact.phone}
                   </p>
                 )}
@@ -469,10 +488,10 @@ export default function Map({
               center={[userLocation.latitude, userLocation.longitude]}
               radius={100}
               pathOptions={{
-                color: '#6366f1',
-                fillColor: '#6366f1',
-                fillOpacity: 0.1,
-                weight: 1,
+                color: '#4285F4',
+                fillColor: '#4285F4',
+                fillOpacity: 0.08,
+                weight: 1.5,
               }}
             />
           </>
@@ -491,10 +510,10 @@ export default function Map({
                 setAddMode(true);
               }
             }}
-            className={`absolute right-3 top-3 z-[1000] flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-all ${
+            className={`absolute right-3 top-3 z-[1000] flex h-10 w-10 items-center justify-center rounded-full shadow-[0_2px_6px_rgba(0,0,0,0.25)] transition-all ${
               addMode
                 ? 'bg-red-500 text-white hover:bg-red-600'
-                : 'bg-primary-600 text-white hover:bg-primary-700'
+                : 'bg-white text-gray-700 hover:bg-gray-50'
             }`}
             title={addMode ? 'Cancel' : 'Add Hospital'}
           >
@@ -502,7 +521,7 @@ export default function Map({
           </button>
 
           {addMode && (
-            <div className="absolute right-14 top-3 z-[1000] max-w-[calc(100%-8rem)] rounded-lg bg-black/75 px-3 py-2 text-xs font-medium text-white shadow-lg sm:max-w-none">
+            <div className="absolute right-14 top-3 z-[1000] max-w-[calc(100%-8rem)] rounded-lg bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-[0_2px_6px_rgba(0,0,0,0.2)] sm:max-w-none">
               Click on the map to place hospital
             </div>
           )}
