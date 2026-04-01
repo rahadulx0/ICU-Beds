@@ -42,10 +42,12 @@ const createHospitalIcon = (available, total, name = '') => {
           transform:rotate(-45deg);
           display:flex;align-items:center;justify-content:center;
         ">
-          <svg style="transform:rotate(45deg)" width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="none">
-            <rect x="10" y="4" width="4" height="16" rx="1"/>
-            <rect x="4" y="10" width="16" height="4" rx="1"/>
-          </svg>
+          <span style="
+            transform:rotate(45deg);
+            color:white;font-size:11px;font-weight:700;
+            font-family:'Google Sans',Roboto,Inter,system-ui,sans-serif;
+            line-height:1;
+          ">${available}</span>
         </div>
         <div style="
           margin-top:4px;
