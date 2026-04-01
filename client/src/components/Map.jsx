@@ -19,40 +19,38 @@ const createHospitalIcon = (available, total, name = '') => {
   if (available === 0) {
     color = '#dc2626';
   } else if (ratio <= 0.2) {
-    color = '#f59e0b';
+    color = '#d97706';
   } else {
     color = '#059669';
   }
 
-  const shortName = name.length > 22 ? name.slice(0, 20) + '\u2026' : name;
+  const shortName = name.length > 24 ? name.slice(0, 22) + '\u2026' : name;
 
   return L.divIcon({
     className: 'custom-marker',
     html: `
-      <div style="display:flex;flex-direction:column;align-items:center;width:150px;">
-        <div style="
-          width:34px;height:34px;border-radius:50%;
-          background:white;border:2.5px solid ${color};
-          box-shadow:0 2px 8px rgba(0,0,0,0.2);
-          color:${color};display:flex;align-items:center;justify-content:center;
-        ">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="${color}">
-            <rect x="10" y="3" width="4" height="18" rx="1.5"/>
-            <rect x="3" y="10" width="18" height="4" rx="1.5"/>
-          </svg>
-        </div>
-        <div style="
-          margin-top:3px;color:${color};
-          font-size:11px;font-weight:700;
+      <div style="
+        display:inline-flex;align-items:center;gap:4px;
+        background:rgba(255,255,255,0.93);
+        padding:3px 7px 3px 5px;
+        border-radius:20px;
+        box-shadow:0 1px 4px rgba(0,0,0,0.16);
+        white-space:nowrap;
+      ">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-5h6v5M12 8v4M10 10h4"/>
+        </svg>
+        <span style="
+          color:${color};
+          font-size:10.5px;font-weight:700;
           font-family:Inter,system-ui,sans-serif;
-          white-space:nowrap;text-align:center;
-          text-shadow:0 1px 3px rgba(255,255,255,0.95),0 -1px 3px rgba(255,255,255,0.95),1px 0 3px rgba(255,255,255,0.95),-1px 0 3px rgba(255,255,255,0.95);
-        ">${shortName}</div>
+          letter-spacing:0.01em;
+        ">${shortName}</span>
       </div>
     `,
-    iconSize: [150, 58],
-    iconAnchor: [75, 17],
-    popupAnchor: [0, -22],
+    iconSize: [1, 1],
+    iconAnchor: [0, 0],
+    popupAnchor: [80, -14],
   });
 };
 
