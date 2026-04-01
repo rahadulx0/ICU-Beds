@@ -12,43 +12,47 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-const createHospitalIcon = (available, total) => {
+const createHospitalIcon = (available, total, name = '') => {
   const ratio = total > 0 ? available / total : 0;
-  let color, bg;
+  let color;
 
   if (available === 0) {
     color = '#dc2626';
-    bg = '#fef2f2';
   } else if (ratio <= 0.2) {
     color = '#f59e0b';
-    bg = '#fffbeb';
   } else {
     color = '#059669';
-    bg = '#ecfdf5';
   }
+
+  const shortName = name.length > 22 ? name.slice(0, 20) + '\u2026' : name;
 
   return L.divIcon({
     className: 'custom-marker',
     html: `
-      <div style="
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: ${bg};
-        border: 3px solid ${color};
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        font-weight: 700;
-        font-size: 13px;
-        color: ${color};
-        font-family: Inter, system-ui, sans-serif;
-      ">${available}</div>
+      <div style="display:flex;flex-direction:column;align-items:center;width:150px;">
+        <div style="
+          width:34px;height:34px;border-radius:50%;
+          background:white;border:2.5px solid ${color};
+          box-shadow:0 2px 8px rgba(0,0,0,0.2);
+          color:${color};display:flex;align-items:center;justify-content:center;
+        ">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="${color}">
+            <rect x="10" y="3" width="4" height="18" rx="1.5"/>
+            <rect x="3" y="10" width="18" height="4" rx="1.5"/>
+          </svg>
+        </div>
+        <div style="
+          margin-top:3px;color:${color};
+          font-size:11px;font-weight:700;
+          font-family:Inter,system-ui,sans-serif;
+          white-space:nowrap;text-align:center;
+          text-shadow:0 1px 3px rgba(255,255,255,0.95),0 -1px 3px rgba(255,255,255,0.95),1px 0 3px rgba(255,255,255,0.95),-1px 0 3px rgba(255,255,255,0.95);
+        ">${shortName}</div>
+      </div>
     `,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-    popupAnchor: [0, -24],
+    iconSize: [150, 58],
+    iconAnchor: [75, 17],
+    popupAnchor: [0, -22],
   });
 };
 
@@ -391,7 +395,7 @@ export default function Map({
           <Marker
             key={hospital._id}
             position={[hospital.location.coordinates[1], hospital.location.coordinates[0]]}
-            icon={createHospitalIcon(hospital.available_icu_beds, hospital.total_icu_beds)}
+            icon={createHospitalIcon(hospital.available_icu_beds, hospital.total_icu_beds, hospital.name)}
             eventHandlers={{
               click: () => onHospitalClick?.(hospital),
             }}
